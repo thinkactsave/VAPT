@@ -204,7 +204,7 @@ export const FindingsExplorer: React.FC<FindingsExplorerProps> = ({
                     {/* CVSS & CRP */}
                     <td className="py-3 px-4 whitespace-nowrap font-mono">
                       <div className="text-slate-300 tabular-nums">
-                        CVSS: <span className="font-semibold text-white">{f.official_cvss_score || 'N/A'}</span>
+                        CVSS: <span className="font-semibold text-white">{f.official_cvss_score != null ? f.official_cvss_score.toFixed(1) : 'Not scored'}</span>
                       </div>
                       <div className="text-[10px] text-[#83cfc0] tabular-nums">
                         CRP: {f.contextual_remediation_priority.toFixed(1)} / 10
