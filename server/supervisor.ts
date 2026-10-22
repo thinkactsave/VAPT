@@ -10,7 +10,8 @@ import {
   FindingSource,
   FindingEvidence,
   TestExecution,
-  ToolExecutionRecord
+  ToolExecutionRecord,
+  ScanProfile
 } from '../src/types/proofvapt.js';
 import { db, ARTIFACTS_DIR } from './db.js';
 import { ScopeEnforcingEgressProxy } from './egressProxy.js';
@@ -191,7 +192,7 @@ export class ScanSupervisor {
     if (status === 'running' && !scan.stage_progress[stage].start_time) {
       scan.stage_progress[stage].start_time = new Date().toISOString();
     }
-    if (status === 'completed' || status === 'failed') {
+    if (status === 'completed' || status === 'failed' || status === 'skipped') {
       scan.stage_progress[stage].end_time = new Date().toISOString();
     }
     db.saveScan(scan);
@@ -200,8 +201,9 @@ export class ScanSupervisor {
   private async executePipeline(scanId: string, target: TargetProfile) {
     const job = this.activeJobs.get(scanId);
     if (!job) return;
+    const scanProfile: ScanProfile = db.getScan(scanId)?.scan_profile || 'passive_only';
 
-    this.appendLog(scanId, `Initializing ProofVAPT assessment pipeline against ${target.target_url}`);
+    this.appendLog(scanId, `Initializing ${scanProfile} ProofVAPT assessment against ${target.target_url}`);
 
     // STAGE 1: Scope & Connection-Time SSRF Validation
     this.updateStage(scanId, 'scope_validation', 'running', 10, 'Validating target scope and egress proxy');
@@ -278,23 +280,30 @@ export class ScanSupervisor {
 
     if (job.abortController.signal.aborted) return;
 
-    // STAGE 3: Rate-Limited Content Discovery (Real ffuf CLI)
-    this.updateStage(scanId, 'discovery', 'running', 40, 'Executing ffuf rate-limited directory brute-force');
-    this.appendLog(scanId, 'Stage 3: Spawning real ffuf binary with rate limit (10 rps) routed through Egress Proxy');
+    // STAGE 3: Content discovery is an explicitly active operation; do not
+    // run wordlist fuzzing for a passive-only assessment profile.
+    if (scanProfile === 'passive_only') {
+      this.updateStage(scanId, 'discovery', 'skipped', 100, 'Skipped by passive-only profile; no wordlist fuzzing was run.');
+      this.appendLog(scanId, 'Stage 3: Skipped ffuf because the selected profile is passive-only.');
+    } else {
+      this.updateStage(scanId, 'discovery', 'running', 40, 'Running rate-limited content discovery');
+      this.appendLog(scanId, 'Stage 3: Running ffuf through the scope-enforcing proxy with rate and request budgets.');
 
-    await this.executeFfuf(scanId, target, proxyPort, job);
-    this.updateStage(scanId, 'discovery', 'completed', 100, 'Content discovery completed');
+      await this.executeFfuf(scanId, target, proxyPort, job);
+      if (job.abortController.signal.aborted) return;
+      this.updateStage(scanId, 'discovery', 'completed', 100, 'Content discovery completed');
+    }
 
     if (job.abortController.signal.aborted) return;
 
-    // STAGE 4: Automated Vulnerability Testing (OWASP ZAP Automation Framework)
+    // STAGE 4: OWASP ZAP spider and passive analysis; active scanning only
+    // runs for the standard_active profile with explicit target authorization.
     this.updateStage(scanId, 'automated_checks', 'running', 60, 'Running OWASP ZAP Automation Framework');
-    this.appendLog(scanId, 'Stage 4: Executing OWASP ZAP Automation Framework (Spider + Passive Analysis + Active Scan)');
+    this.appendLog(scanId, 'Stage 4: Running the ZAP spider/passive checks and only enabling active checks when explicitly authorized.');
 
-    await this.executeZap(scanId, target, proxyPort, job);
-    this.updateStage(scanId, 'automated_checks', 'completed', 100, 'Automated checks completed');
-
+    await this.executeZap(scanId, target, proxyPort, job, scanProfile);
     if (job.abortController.signal.aborted) return;
+    this.updateStage(scanId, 'automated_checks', 'completed', 100, 'Automated checks completed');
 
     // STAGE 5: Finding Correlation & Deduplication
     this.updateStage(scanId, 'correlation', 'running', 80, 'Deduplicating findings and mapping to OWASP Top 10:2025');
@@ -515,7 +524,8 @@ export class ScanSupervisor {
     scanId: string,
     target: TargetProfile,
     proxyPort: number,
-    job: ActiveJob
+    job: ActiveJob,
+    scanProfile: ScanProfile
   ): Promise<void> {
     const zapBin = fs.existsSync('/usr/local/bin/zap.sh')
       ? '/usr/local/bin/zap.sh'
@@ -524,44 +534,64 @@ export class ScanSupervisor {
     const zapPlanPath = path.resolve(ARTIFACTS_DIR, `${scanId}_zap_plan.yaml`);
     const zapReportPath = path.resolve(ARTIFACTS_DIR, `${scanId}_zap_report.json`);
 
-    // Build declarative Automation Framework YAML plan
-    const zapYamlPlan = `
-env:
-  contexts:
-    - name: "ProofVAPT-Scope"
-      urls:
-        - "${target.target_url}"
-      includePaths:
-        - "${target.target_url}.*"
-      excludePaths:
-        ${target.excluded_paths.map((p) => `- ".*${p}.*"`).join('\n        ')}
-  parameters:
-    failOnError: false
-    progressToStdout: false
-jobs:
-  - type: spider
-    parameters:
-      context: "ProofVAPT-Scope"
-      user: ""
-      url: "${target.target_url}"
-      maxDuration: 1
-      maxDepth: 3
-  - type: passiveScan-wait
-    parameters:
-      maxDuration: 1
-  ${target.active_scan_scope_confirmed && target.mode !== 'live' ? `
-  - type: activeScan
-    parameters:
-      context: "ProofVAPT-Scope"
-      url: "${target.target_url}"
-      maxDuration: 2
-  ` : ''}
-  - type: report
-    parameters:
-      template: "traditional-json"
-      reportDir: "${ARTIFACTS_DIR}"
-      reportFile: "${scanId}_zap_report.json"
-`;
+    // Quote every dynamic scalar and escape user-controlled path strings before
+    // embedding them in YAML/regex. A crafted exclusion must not alter the plan.
+    const quoteYaml = (value: string) => JSON.stringify(value);
+    const escapeRegex = (value: string) => Array.from(value).map((character) =>
+      '.+*?^$(){}|[]\\'.includes(character) ? '\\' + character : character
+    ).join('');
+    const targetUrl = new URL(target.target_url);
+    const basePath = targetUrl.pathname.replace(/\/$/, '');
+    const includePattern = '^' + escapeRegex(targetUrl.origin) + escapeRegex(basePath) + '(?:/.*)?(?:\\?.*)?$';
+    const excludePatterns = (target.excluded_paths || []).map((excludedPath) =>
+      '.*' + escapeRegex(excludedPath) + '(?:/.*)?(?:\\?.*)?$'
+    );
+
+    const yamlLines = [
+      'env:',
+      '  contexts:',
+      '    - name: "ProofVAPT-Scope"',
+      '      urls:',
+      '        - ' + quoteYaml(target.target_url),
+      '      includePaths:',
+      '        - ' + quoteYaml(includePattern)
+    ];
+    if (excludePatterns.length > 0) {
+      yamlLines.push('      excludePaths:');
+      for (const pattern of excludePatterns) yamlLines.push('        - ' + quoteYaml(pattern));
+    }
+    yamlLines.push(
+      '  parameters:',
+      '    failOnError: true',
+      '    progressToStdout: false',
+      'jobs:',
+      '  - type: spider',
+      '    parameters:',
+      '      context: "ProofVAPT-Scope"',
+      '      url: ' + quoteYaml(target.target_url),
+      '      maxDuration: 1',
+      '      maxDepth: 3',
+      '  - type: passiveScan-wait',
+      '    parameters:',
+      '      maxDuration: 1'
+    );
+    if (scanProfile === 'standard_active' && target.active_scan_scope_confirmed) {
+      yamlLines.push(
+        '  - type: activeScan',
+        '    parameters:',
+        '      context: "ProofVAPT-Scope"',
+        '      url: ' + quoteYaml(target.target_url),
+        '      maxDuration: 2'
+      );
+    }
+    yamlLines.push(
+      '  - type: report',
+      '    parameters:',
+      '      template: "traditional-json"',
+      '      reportDir: ' + quoteYaml(ARTIFACTS_DIR),
+      '      reportFile: ' + quoteYaml(scanId + '_zap_report.json')
+    );
+    const zapYamlPlan = yamlLines.join('\n') + '\n';
 
     fs.writeFileSync(zapPlanPath, zapYamlPlan, 'utf-8');
 
