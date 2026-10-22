@@ -626,9 +626,9 @@ export class CustomSecurityProber {
     maxVersion?: tls.SecureVersion
   ): Promise<{ protocol: string; authorized: boolean; validTo?: string; issuer?: string; subject?: string } | null> {
     return new Promise((resolve) => {
-      const cleanHost = host.replace(/^\\[|\\]$/g, '');
-      const authorityHost = cleanHost.includes(':') ? `[${cleanHost}]` : cleanHost;
-      const authority = `${authorityHost}:${port}`;
+      const cleanHost = host.replace(/^\[|\]$/g, '');
+      const authorityHost = cleanHost.includes(':') ? '[' + cleanHost + ']' : cleanHost;
+      const authority = authorityHost + ':' + port;
       const proxySocket = net.connect(this.proxyPort, '127.0.0.1');
       let finished = false;
       let headerBuffer = Buffer.alloc(0);
@@ -649,12 +649,12 @@ export class CustomSecurityProber {
       const onProxyData = (chunk: Buffer) => {
         headerBuffer = Buffer.concat([headerBuffer, chunk]);
         if (headerBuffer.length > 16 * 1024) return fail();
-        const headerEnd = headerBuffer.indexOf('\\r\\n\\r\\n');
-        if (headerEnd < 0) return;
 
+        const headerEnd = headerBuffer.indexOf('\r\n\r\n');
+        if (headerEnd < 0) return;
         const headerText = headerBuffer.subarray(0, headerEnd).toString('latin1');
-        const statusLine = headerText.split('\\r\\n', 1)[0] || '';
-        if (!/^HTTP\\/1\\.[01] 200(?: |$)/.test(statusLine)) {
+        const statusLine = headerText.split('\r\n', 1)[0] || '';
+        if (!/^HTTP\/1\.[01] 200(?: |$)/.test(statusLine)) {
           proxySocket.removeListener('data', onProxyData);
           return fail();
         }
@@ -663,7 +663,7 @@ export class CustomSecurityProber {
         proxySocket.setTimeout(0);
         proxySocket.removeListener('error', fail);
         const extraBytes = headerBuffer.subarray(headerEnd + 4);
-        if (extraBytes.length) proxySocket.unshift(extraBytes);
+        if (extraBytes.length > 0) proxySocket.unshift(extraBytes);
 
         const tlsOptions: tls.ConnectionOptions = {
           socket: proxySocket,
@@ -699,7 +699,7 @@ export class CustomSecurityProber {
       proxySocket.on('data', onProxyData);
       proxySocket.once('connect', () => {
         proxySocket.write(
-          `CONNECT ${authority} HTTP/1.1\\r\\nHost: ${authority}\\r\\nUser-Agent: ProofVAPT-TLS-Prober/1.0\\r\\n\\r\\n`
+          'CONNECT ' + authority + ' HTTP/1.1\r\nHost: ' + authority + '\r\nUser-Agent: ProofVAPT-TLS-Prober/1.0\r\n\r\n'
         );
       });
     });
