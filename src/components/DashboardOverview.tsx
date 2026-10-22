@@ -22,7 +22,7 @@ interface DashboardOverviewProps {
   onStartNewScan: () => void;
   onSelectScan: (scanId: string) => void;
   onNavigateTab: (tab: string) => void;
-  onSeedLab: () => void;
+  onSeedLab: () => Promise<void>;
 }
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
@@ -40,6 +40,19 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const mediumCount = findings.filter((f) => f.source_severity === 'MEDIUM').length;
   const lowCount = findings.filter((f) => f.source_severity === 'LOW').length;
   const verifiedCount = findings.filter((f) => f.verification_status === 'verified').length;
+  const [isStartingLab, setIsStartingLab] = React.useState(false);
+  const [labError, setLabError] = React.useState<string | null>(null);
+  const startLab = async () => {
+    setIsStartingLab(true);
+    setLabError(null);
+    try {
+      await onSeedLab();
+    } catch (error) {
+      setLabError(error instanceof Error ? error.message : 'Could not start the lab assessment.');
+    } finally {
+      setIsStartingLab(false);
+    }
+  };
 
   const target = currentScan?.target;
   const wireRequests = currentScan?.observed_request_count || 0;
@@ -49,6 +62,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Banner / Assessment Status */}
+      {labError && (
+        <div role="alert" className="rounded-lg border border-amber-900/60 bg-amber-950/20 px-4 py-3 text-xs text-amber-200">
+          {labError}
+        </div>
+      )}
       <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -69,10 +87,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
         <div className="flex items-center gap-3 shrink-0">
           <button
-            onClick={onSeedLab}
+            onClick={startLab}
+            disabled={isStartingLab}
             className="px-3.5 py-2 text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 rounded-lg transition-colors whitespace-nowrap"
           >
-            Load Juice Shop Lab
+            {isStartingLab ? 'Starting lab…' : 'Start Juice Shop scan'}
           </button>
           <button
             onClick={onStartNewScan}
