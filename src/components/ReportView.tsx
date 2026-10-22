@@ -237,7 +237,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
                   </div>
 
                   <div className="text-right font-mono text-[11px] text-slate-400 shrink-0">
-                    <div>CVSS: {f.official_cvss_score || 'N/A'}</div>
+                    <div>CVSS: {f.official_cvss_score != null ? f.official_cvss_score.toFixed(1) : 'Not scored'}</div>
                     <div className="text-[#83cfc0] print:text-slate-800">Priority: {f.contextual_remediation_priority.toFixed(1)}/10</div>
                   </div>
                 </div>
