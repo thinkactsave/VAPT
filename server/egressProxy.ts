@@ -47,7 +47,7 @@ export class ScopeEnforcingEgressProxy {
     if (
       normalizedIp === '::1' ||
       normalizedIp === '::' ||
-      normalizedIp.startsWith('fe8') ||
+      /^fe[89ab][0-9a-f]:/i.test(normalizedIp) ||
       /^f[cd][0-9a-f]{2}:/i.test(normalizedIp) ||
       normalizedIp.startsWith('::ffff:')
     ) {
