@@ -91,7 +91,10 @@ apiRouter.post('/targets', (req, res) => {
       res.status(400).json({ error: 'Lab mode requires explicit confirmation of an isolated test network.' });
       return;
     }
-    const privateIpCheck = ScopeEnforcingEgressProxy.isRestrictedIP(url.hostname, labConfirmed);
+    const privateIpCheck = ScopeEnforcingEgressProxy.isRestrictedIP(
+      url.hostname,
+      mode === 'lab' && labConfirmed
+    );
     if (mode === 'live' && privateIpCheck.restricted) {
       res.status(400).json({ error: 'Private, loopback, link-local, and reserved IP literals are not allowed in live mode.' });
       return;
@@ -144,7 +147,7 @@ apiRouter.post('/targets', (req, res) => {
       rate_limit_rps: rate,
       max_request_budget: budget,
       timeout_ms: timeout,
-      is_isolated_lab_network_confirmed: labConfirmed,
+      is_isolated_lab_network_confirmed: mode === 'lab' && labConfirmed,
       active_scan_scope_confirmed: activeConfirmed,
       created_at: new Date().toISOString()
     };
@@ -198,6 +201,12 @@ apiRouter.post('/scans', async (req, res) => {
     return;
   }
 
+  const activeScans = db.getScans().filter((existing) => existing.status === 'queued' || existing.status === 'running');
+  if (activeScans.length >= 1) {
+    res.status(429).json({ error: 'ProofVAPT is configured for one active assessment at a time. Wait for the current scan to finish or cancel it.' });
+    return;
+  }
+
   const stages: ScanStage[] = [
     'scope_validation',
     'reconnaissance',
@@ -230,10 +239,17 @@ apiRouter.post('/scans', async (req, res) => {
 
   db.saveScan(scan);
 
-  // Trigger background execution
-  scanSupervisor.startScan(scan.id);
-
-  res.status(201).json(scan);
+  // Start the worker before returning so the initial API response reflects persisted state.
+  try {
+    const startedScan = await scanSupervisor.startScan(scan.id);
+    res.status(201).json(startedScan);
+  } catch (error) {
+    scan.status = 'failed';
+    scan.stop_condition_triggered = error instanceof Error ? error.message : 'Failed to start scan worker.';
+    scan.completed_at = new Date().toISOString();
+    db.saveScan(scan);
+    res.status(500).json({ error: 'Unable to start assessment. Review the server logs.' });
+  }
 });
 
 apiRouter.post('/scans/:id/cancel', async (req, res) => {
@@ -359,6 +375,25 @@ apiRouter.post('/findings/:id/retest', async (req, res) => {
 
 // Seed Lab Benchmarks
 apiRouter.post('/lab/seed', (req, res) => {
+  // In production, the lab target must be explicitly configured to a separate
+  // Juice Shop service; never default a benchmark target to this web server.
+  const juiceShopUrl = process.env.JUICE_SHOP_URL || (process.env.NODE_ENV === 'production' ? '' : 'http://127.0.0.1:3001');
+  if (!juiceShopUrl) {
+    res.status(503).json({ error: 'Lab benchmark is not configured. Set JUICE_SHOP_URL to a dedicated, isolated Juice Shop instance.' });
+    return;
+  }
+
+  let labUrl: URL;
+  try {
+    labUrl = new URL(juiceShopUrl);
+    if (!['http:', 'https:'].includes(labUrl.protocol) || labUrl.username || labUrl.password || labUrl.hash) {
+      throw new Error('Invalid lab target URL');
+    }
+  } catch {
+    res.status(500).json({ error: 'JUICE_SHOP_URL must be a valid HTTP or HTTPS URL without credentials or fragments.' });
+    return;
+  }
+
   // Check if Juice Shop target already exists
   const existing = db.getTargets().find((t) => t.name.includes('Juice Shop'));
   if (existing) {
@@ -370,9 +405,9 @@ apiRouter.post('/lab/seed', (req, res) => {
     id: `target-lab-juiceshop`,
     name: 'OWASP Juice Shop (Authorized Local Lab Benchmark)',
     mode: 'lab',
-    target_url: 'http://localhost:3000',
-    hostname: 'localhost',
-    allowed_ports: [80, 443, 3000, 8080],
+    target_url: labUrl.toString(),
+    hostname: labUrl.hostname,
+    allowed_ports: [labUrl.port ? Number(labUrl.port) : (labUrl.protocol === 'https:' ? 443 : 80)],
     excluded_paths: ['/logout'],
     rate_limit_rps: 15,
     max_request_budget: 2500,
