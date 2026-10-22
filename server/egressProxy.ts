@@ -35,20 +35,29 @@ export class ScopeEnforcingEgressProxy {
    * Validates if a destination IP address falls into restricted/private ranges
    */
   public static isRestrictedIP(ip: string, allowLabPrivate: boolean): { restricted: boolean; reason?: string } {
-    // Cloud metadata service is ALWAYS blocked under all circumstances
-    if (ip === '169.254.169.254' || ip.startsWith('169.254.')) {
+    const normalizedIp = ip.replace(/^\\[|\\]$/g, '').toLowerCase();
+
+    // Link-local addresses include cloud metadata services; always reject them,
+    // even when the operator has enabled a private lab target.
+    if (normalizedIp === '169.254.169.254' || normalizedIp.startsWith('169.254.')) {
       return { restricted: true, reason: 'Cloud metadata service access prohibited (169.254.169.254)' };
     }
 
     // IPv6 checks
-    if (ip === '::1' || ip === '::' || ip.toLowerCase().startsWith('fe80:') || ip.toLowerCase().startsWith('fc00:')) {
+    if (
+      normalizedIp === '::1' ||
+      normalizedIp === '::' ||
+      normalizedIp.startsWith('fe8') ||
+      /^f[cd][0-9a-f]{2}:/i.test(normalizedIp) ||
+      normalizedIp.startsWith('::ffff:')
+    ) {
       if (!allowLabPrivate) {
         return { restricted: true, reason: 'IPv6 local/loopback/unique-local address prohibited without isolated lab network' };
       }
     }
 
     // IPv4 Checks
-    const parts = ip.split('.').map(Number);
+    const parts = normalizedIp.split('.').map(Number);
     if (parts.length === 4 && parts.every((p) => !isNaN(p) && p >= 0 && p <= 255)) {
       const [b0, b1] = parts;
 
@@ -92,23 +101,23 @@ export class ScopeEnforcingEgressProxy {
   ): Promise<{ allowed: boolean; ip?: string; reason?: string }> {
     const { target } = this.config;
 
-    // Port scope validation
-    if (target.allowed_ports.length > 0 && !target.allowed_ports.includes(port)) {
-      return { allowed: false, reason: `Port ${port} is not in authorized ports whitelist: [${target.allowed_ports.join(', ')}]` };
+    // Fail closed: an empty port allowlist must never mean "all ports".
+    if (!Array.isArray(target.allowed_ports) || !target.allowed_ports.includes(port)) {
+      return { allowed: false, reason: `Port ${port} is not in the authorized ports allowlist.` };
     }
 
-    // Hostname scope validation
-    const targetHost = target.hostname.toLowerCase();
-    const reqHost = hostname.toLowerCase();
-    const isHostMatched = reqHost === targetHost || reqHost.endsWith(`.${targetHost}`) || targetHost === 'localhost' || targetHost === '127.0.0.1';
-
-    if (!isHostMatched && target.mode !== 'lab') {
-      return { allowed: false, reason: `Host '${hostname}' is outside authorized scope target '${target.hostname}'` };
+    // One target means one exact hostname. Lab mode does not grant a wildcard
+    // exception for arbitrary destinations or redirected hosts.
+    const targetHost = target.hostname.toLowerCase().replace(/^\\[|\\]$/g, '');
+    const reqHost = hostname.toLowerCase().replace(/^\\[|\\]$/g, '');
+    if (reqHost !== targetHost) {
+      return { allowed: false, reason: `Host '${hostname}' is outside the authorized target '${target.hostname}'.` };
     }
 
     // Dynamic DNS resolution at connection time
     try {
-      const addresses = await dns.lookup(hostname, { all: true });
+      const lookupHost = hostname.toLowerCase().replace(/^\\[|\\]$/g, '');
+      const addresses = await dns.lookup(lookupHost, { all: true, verbatim: true });
       if (!addresses || addresses.length === 0) {
         return { allowed: false, reason: `DNS resolution failed for host '${hostname}'` };
       }
@@ -165,7 +174,6 @@ export class ScopeEnforcingEgressProxy {
       return { allowed: false, reason: 'Proxy has stopped processing new requests' };
     }
 
-    this.requestCount++;
     const maxBudget = this.config.target.max_request_budget || 2000;
 
     if (this.requestCount >= maxBudget) {
@@ -177,6 +185,7 @@ export class ScopeEnforcingEgressProxy {
       return { allowed: false, reason: msg };
     }
 
+    this.requestCount++;
     return { allowed: true };
   }
 
@@ -198,10 +207,30 @@ export class ScopeEnforcingEgressProxy {
     try {
       targetUrl = new URL(req.url);
     } catch {
-      targetUrl = new URL(`http://${req.headers.host}${req.url}`);
+      try {
+        if (!req.headers.host) throw new Error('Missing Host header');
+        targetUrl = new URL(`http://${req.headers.host}${req.url}`);
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Invalid proxy request URL');
+        return;
+      }
     }
 
-    const host = targetUrl.hostname;
+    if (targetUrl.protocol !== 'http:') {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('HTTPS requests must use CONNECT tunnelling');
+      return;
+    }
+
+    const excluded = this.config.target.excluded_paths || [];
+    if (excluded.some((p) => targetUrl.pathname === p || targetUrl.pathname.startsWith(p.endsWith('/') ? p : p + '/'))) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Path is excluded from the authorized assessment scope');
+      return;
+    }
+
+    const host = targetUrl.hostname.replace(/^\\[|\\]$/g, '');
     const port = targetUrl.port ? parseInt(targetUrl.port, 10) : targetUrl.protocol === 'https:' ? 443 : 80;
 
     const validation = await this.validateDestination(host, port);
@@ -246,7 +275,7 @@ export class ScopeEnforcingEgressProxy {
         method: req.method,
         headers: {
           ...req.headers,
-          host: req.headers.host || host,
+          host: targetUrl.host,
         },
       },
       (proxyRes) => {
@@ -283,8 +312,18 @@ export class ScopeEnforcingEgressProxy {
       return;
     }
 
-    const [hostname, portStr] = (req.url || '').split(':');
-    const port = parseInt(portStr || '443', 10);
+    let hostname = '';
+    let port = 443;
+    try {
+      const connectUrl = new URL(`http://${req.url || ''}`);
+      hostname = connectUrl.hostname.replace(/^\\[|\\]$/g, '');
+      port = connectUrl.port ? Number(connectUrl.port) : 443;
+      if (!hostname || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid CONNECT authority');
+    } catch {
+      clientSocket.write('HTTP/1.1 400 Bad Request\\r\\n\\r\\n');
+      clientSocket.destroy();
+      return;
+    }
 
     const validation = await this.validateDestination(hostname, port);
 
