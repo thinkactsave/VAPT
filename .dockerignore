@@ -1,0 +1,14 @@
+.git
+.github
+.aistudio
+.data
+data
+node_modules
+dist
+dist-server
+coverage
+*.log
+.env
+.env.*
+!.env.example
+bin
