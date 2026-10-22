@@ -28,3 +28,13 @@ jobs:
         run: npm test
       - name: Build production bundle
         run: npm run build
+
+  container-image:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Build production container
+        run: docker build --pull --tag proofvapt:ci .
