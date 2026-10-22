@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ScopeEnforcingEgressProxy } from '../server/egressProxy.js';
 import { BenchmarkEvaluationEngine } from '../server/benchmarks.js';
-import { TargetProfile } from '../src/types/proofvapt.js';
+import { TargetProfile, UnifiedFinding } from '../src/types/proofvapt.js';
+import { GroundTruthItem } from '../server/benchmarks.js';
 
 test('always blocks the cloud metadata link-local address, including lab mode', () => {
   assert.equal(ScopeEnforcingEgressProxy.isRestrictedIP('169.254.169.254', true).restricted, true);
@@ -59,4 +60,43 @@ test('fails closed for a foreign host or a port outside scope, even in lab mode'
   const foreignPort = await proxy.validateDestination('juice-shop', 443);
   assert.equal(foreignHost.allowed, false);
   assert.equal(foreignPort.allowed, false);
+});
+
+
+test('counts unresolved potential alerts on known-clean controls as false positives', () => {
+  const groundTruth: GroundTruthItem[] = [{
+    id: 'GT-CONTROL-01',
+    name: 'Known clean control',
+    endpoint: '/api/quantity',
+    parameter: 'id',
+    owasp_category: 'A05',
+    is_true_vulnerability: false,
+    cwe_id: 'CWE-0',
+    expected_severity: 'LOW',
+    description: 'Hardened integer parameter route used as a clean control.'
+  }];
+  const finding: UnifiedFinding = {
+    id: 'finding-control-alert',
+    scan_id: 'scan-control-test',
+    test_id: 'PV-A05-002',
+    title: 'Potential SQL injection',
+    owasp_category: 'A05:2025 - Injection',
+    owasp_category_code: 'A05',
+    source_severity: 'LOW',
+    official_cvss_score: null,
+    official_cvss_version: null,
+    official_cvss_vector: null,
+    contextual_remediation_priority: 2.0,
+    affected_url: 'https://example.invalid/api/quantity?id=1',
+    parameter: 'id',
+    verification_status: 'potential',
+    remediation_status: 'open',
+    verification_notes: 'Differential proof was not observed.',
+    remediation_guidance: 'Manually review.',
+    cwe_id: 'CWE-89',
+    created_at: new Date(0).toISOString()
+  };
+  const metrics = BenchmarkEvaluationEngine.evaluateScanAgainstGroundTruth([finding], groundTruth, 1, 10, 1, 0, 0);
+  assert.equal(metrics.fp_count, 1);
+  assert.equal(metrics.tn_count, 0);
 });
