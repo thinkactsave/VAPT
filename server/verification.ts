@@ -95,13 +95,8 @@ export class RemediationVerificationEngine {
             retestEvidence = `Security header baseline remains incomplete. HSTS=${hasHsts}, CSP=${hasCsp}, XFO=${hasXfo}, nosniff=${hasNosniff}.`;
           }
         } else if (finding.test_id === 'PV-A02-004') {
-          if (response.statusCode === 403 || response.statusCode === 404 || response.statusCode === 410) {
-            outcome = 'remediated';
-            retestEvidence = `Route returned HTTP ${response.statusCode}; access appears restricted. Confirm that the intended file or resource is no longer exposed.`;
-          } else {
-            outcome = 'inconclusive';
-            retestEvidence = `Route returned HTTP ${response.statusCode}. A status code alone cannot establish that sensitive content is exposed; manual evidence review is required.`;
-          }
+          outcome = 'inconclusive';
+          retestEvidence = `Route returned HTTP ${response.statusCode} with ${response.body.length} response bytes. An access-denied or not-found status is encouraging but cannot by itself prove remediation; confirm the intended resource and exposure manually.`;
         } else if (finding.test_id === 'PV-A02-002') {
           const allowOrigin = response.headers['access-control-allow-origin'];
           const allowCredentials = String(response.headers['access-control-allow-credentials'] || '').toLowerCase() === 'true';
@@ -109,7 +104,7 @@ export class RemediationVerificationEngine {
           if (reflectsUntrustedOrigin && allowCredentials) {
             outcome = 'still_vulnerable';
             retestEvidence = `The target reflects an untrusted Origin and enables credentials. Access-Control-Allow-Origin=${String(allowOrigin)}; credentials=true.`;
-          } else if (!allowOrigin || allowOrigin === 'null') {
+          } else if (!allowOrigin) {
             outcome = 'remediated';
             retestEvidence = 'The response did not return an Access-Control-Allow-Origin value for the probe.';
           } else {
