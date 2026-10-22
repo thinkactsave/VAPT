@@ -71,7 +71,7 @@ export interface ScanExecution {
 export interface ToolExecutionRecord {
   id: string;
   scan_id: string;
-  tool_name: 'ffuf' | 'owasp_zap_spider' | 'owasp_zap_active' | 'tls_header_prober' | 'egress_proxy';
+  tool_name: 'ffuf' | 'owasp_zap_spider' | 'owasp_zap_active' | 'owasp_zap_passive' | 'tls_header_prober' | 'egress_proxy';
   tool_version: string;
   command_line: string;
   exit_code: number;
