@@ -137,7 +137,10 @@ export class BenchmarkEvaluationEngine {
           fn++;
         }
       } else {
-        if (match && match.verification_status === 'verified') {
+        // Any remaining alert on a known-clean control is a false positive.
+        // Do not require prior verification: that would hide unresolved
+        // potential alerts and artificially inflate measured precision.
+        if (match && match.verification_status !== 'not_reproduced') {
           fp++;
         } else {
           tn++;
