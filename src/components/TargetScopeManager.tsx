@@ -302,7 +302,7 @@ export const TargetScopeManager: React.FC<TargetScopeManagerProps> = ({
             </div>
           </div>
 
-          {/* Rate Limit & Request Budget */}
+          {/* Rate Limit & Proxy Request / Tunnel Budget */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="font-semibold text-slate-300">Egress Rate Limit (req/sec)</label>
@@ -316,7 +316,7 @@ export const TargetScopeManager: React.FC<TargetScopeManagerProps> = ({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="font-semibold text-slate-300">Max Request Budget (Stop Condition)</label>
+              <label className="font-semibold text-slate-300">Max Proxy Request / Tunnel Budget (Stop Condition)</label>
               <input
                 type="number"
                 min="100"
