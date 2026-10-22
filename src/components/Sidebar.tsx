@@ -28,10 +28,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   findingsCount
 }) => {
   const navItems = [
-    { id: 'overview', label: 'SOC Overview', icon: LayoutDashboard },
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     {
       id: 'pipeline',
-      label: '7-Stage Pipeline',
+      label: 'Scan activity',
       icon: Cpu,
       badge: activeScan?.status === 'running' ? 'Active' : undefined,
       badgeColor: 'text-cyan-400 bg-cyan-950/60'
@@ -51,7 +51,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     { id: 'owasp', label: 'OWASP 2025 Matrix', icon: Grid },
     { id: 'benchmarks', label: 'Research Benchmarks', icon: FlaskConical },
-    { id: 'report', label: 'Executive & Tech PDF', icon: FileText }
+    { id: 'report', label: 'Report', icon: FileText }
   ];
 
   return (
@@ -119,11 +119,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-3 border-t border-[#1F2937] text-[11px] text-slate-500 space-y-1 font-mono">
         <div className="flex items-center justify-between">
           <span>Egress Proxy</span>
-          <span className="text-emerald-400">Enforcing (Anti-SSRF)</span>
+          <span className={activeScan?.status === 'running' ? 'text-emerald-400' : 'text-slate-500'}>
+            {activeScan?.status === 'running' ? 'Active for scan' : 'Starts with scan'}
+          </span>
         </div>
         <div className="flex items-center justify-between">
           <span>Worker Supervisor</span>
-          <span className="text-cyan-400">Node ChildProcess</span>
+          <span className="text-slate-500">Node workers</span>
         </div>
       </div>
     </aside>
