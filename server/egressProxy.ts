@@ -37,7 +37,7 @@ export class ScopeEnforcingEgressProxy {
    * Validates if a destination IP address falls into restricted/private ranges
    */
   public static isRestrictedIP(ip: string, allowLabPrivate: boolean): { restricted: boolean; reason?: string } {
-    const normalizedIp = ip.replace(/^\\[|\\]$/g, '').toLowerCase();
+    const normalizedIp = ip.replace(/^\[|\]$/g, '').toLowerCase();
 
     // Link-local addresses include cloud metadata services; always reject them,
     // even when the operator has enabled a private lab target.
@@ -110,15 +110,15 @@ export class ScopeEnforcingEgressProxy {
 
     // One target means one exact hostname. Lab mode does not grant a wildcard
     // exception for arbitrary destinations or redirected hosts.
-    const targetHost = target.hostname.toLowerCase().replace(/^\\[|\\]$/g, '');
-    const reqHost = hostname.toLowerCase().replace(/^\\[|\\]$/g, '');
+    const targetHost = target.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    const reqHost = hostname.toLowerCase().replace(/^\[|\]$/g, '');
     if (reqHost !== targetHost) {
       return { allowed: false, reason: `Host '${hostname}' is outside the authorized target '${target.hostname}'.` };
     }
 
     // Dynamic DNS resolution at connection time
     try {
-      const lookupHost = hostname.toLowerCase().replace(/^\\[|\\]$/g, '');
+      const lookupHost = hostname.toLowerCase().replace(/^\[|\]$/g, '');
       const addresses = await dns.lookup(lookupHost, { all: true, verbatim: true });
       if (!addresses || addresses.length === 0) {
         return { allowed: false, reason: `DNS resolution failed for host '${hostname}'` };
@@ -243,7 +243,7 @@ export class ScopeEnforcingEgressProxy {
       return;
     }
 
-    const host = targetUrl.hostname.replace(/^\\[|\\]$/g, '');
+    const host = targetUrl.hostname.replace(/^\[|\]$/g, '');
     const port = targetUrl.port ? parseInt(targetUrl.port, 10) : targetUrl.protocol === 'https:' ? 443 : 80;
 
     const validation = await this.validateDestination(host, port);
@@ -335,11 +335,11 @@ export class ScopeEnforcingEgressProxy {
     let port = 443;
     try {
       const connectUrl = new URL(`http://${req.url || ''}`);
-      hostname = connectUrl.hostname.replace(/^\\[|\\]$/g, '');
+      hostname = connectUrl.hostname.replace(/^\[|\]$/g, '');
       port = connectUrl.port ? Number(connectUrl.port) : 443;
       if (!hostname || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid CONNECT authority');
     } catch {
-      clientSocket.write('HTTP/1.1 400 Bad Request\\r\\n\\r\\n');
+      clientSocket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
       clientSocket.destroy();
       return;
     }
