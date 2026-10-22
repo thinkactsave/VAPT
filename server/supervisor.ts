@@ -566,7 +566,6 @@ jobs:
           detached: true,
           env: {
             ...process.env,
-            JAVA_HOME: '/usr/lib/jvm/java-17-openjdk-amd64',
             PATH: `${process.env.PATH}:/usr/local/bin:/opt/zap`
           }
         });
