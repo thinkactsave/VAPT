@@ -104,6 +104,7 @@ export default function App() {
   const [coverage, setCoverage] = useState<OWASPCoverageSummary[]>([]);
   const [testRegistry, setTestRegistry] = useState<OWASPTestRegistryItem[]>([]);
   const [metrics, setMetrics] = useState<ResearchMetrics | null>(null);
+  const [groundTruth, setGroundTruth] = useState<typeof JUICE_SHOP_GROUND_TRUTH>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [toolStatus, setToolStatus] = useState<any>(null);
 
@@ -167,6 +168,7 @@ export default function App() {
       if (metRes.ok) {
         const metData = await metRes.json();
         setMetrics(metData.metrics || null);
+        setGroundTruth(Array.isArray(metData.groundTruth) ? metData.groundTruth : []);
       }
     } catch (err) {
       console.error('Failed to fetch scan details:', err);
@@ -425,7 +427,7 @@ export default function App() {
           {activeTab === 'benchmarks' && (
             <EvaluationSuite
               metrics={metrics}
-              groundTruth={JUICE_SHOP_GROUND_TRUTH}
+              groundTruth={groundTruth}
               onRefreshEvaluation={() => {
                 if (currentScan) fetchScanDetails(currentScan.id);
               }}
