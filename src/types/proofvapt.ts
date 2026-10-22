@@ -151,6 +151,7 @@ export interface UnifiedFinding {
   owasp_category: string;
   owasp_category_code: string; // 'A01' to 'A10'
   source_severity: SeverityLevel;
+  /** Only populated when a standards-based CVSS score is calculated or imported from a trusted source. */
   official_cvss_score: number | null;
   official_cvss_version: '3.1' | '4.0' | null;
   official_cvss_vector: string | null;
