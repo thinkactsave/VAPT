@@ -329,7 +329,7 @@ export const TargetScopeManager: React.FC<TargetScopeManagerProps> = ({
           </div>
 
           {/* SSRF & Lab Network Confirmation */}
-          {isPrivateOrLocal && (
+          {(isPrivateOrLocal || mode === 'lab') && (
             <div className="p-3 bg-amber-950/20 border border-amber-800/40 rounded-lg space-y-2">
               <div className="font-semibold text-amber-400 flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4" />
