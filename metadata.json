@@ -1,0 +1,6 @@
+{
+  "name": "ProofVAPT",
+  "description": "Automated Web Application Vulnerability Assessment Platform with Attack-Surface Discovery, OWASP Top 10:2025 Mapping, Evidence Correlation, and Remediation Verification.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
