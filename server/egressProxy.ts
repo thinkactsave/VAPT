@@ -60,9 +60,11 @@ export class ScopeEnforcingEgressProxy {
     // confirmed isolated lab target.
     if (
       normalizedIp === '::' ||
+      normalizedIp.startsWith('ff') ||
+      normalizedIp.startsWith('2001:db8:') ||
       /^fe[89ab][0-9a-f]:/i.test(normalizedIp)
     ) {
-      return { restricted: true, reason: 'Unspecified or IPv6 link-local destination blocked' };
+      return { restricted: true, reason: 'Unspecified, multicast, documentation, or IPv6 link-local destination blocked' };
     }
     if (normalizedIp === '::1' || /^f[cd][0-9a-f]{2}:/i.test(normalizedIp)) {
       if (!allowLabPrivate) {
@@ -93,9 +95,22 @@ export class ScopeEnforcingEgressProxy {
       if (b0 === 192 && b1 === 168) {
         if (!allowLabPrivate) return { restricted: true, reason: 'Private network (192.168.0.0/16) blocked without isolated lab policy' };
       }
-      // 100.64.0.0/10 (Carrier-grade NAT)
+      // 100.64.0.0/10 is shared provider address space, not an isolated lab range.
       if (b0 === 100 && b1 >= 64 && b1 <= 127) {
-        if (!allowLabPrivate) return { restricted: true, reason: 'Carrier-grade NAT space blocked' };
+        return { restricted: true, reason: 'Carrier-grade NAT space blocked' };
+      }
+
+      // Block documentation and special-purpose ranges which must not be
+      // treated as internet-routable scanner destinations.
+      if (
+        (b0 === 192 && b1 === 0 && parts[2] === 0) ||
+        (b0 === 192 && b1 === 0 && parts[2] === 2) ||
+        (b0 === 192 && b1 === 88 && parts[2] === 99) ||
+        (b0 === 198 && (b1 === 18 || b1 === 19)) ||
+        (b0 === 198 && b1 === 51 && parts[2] === 100) ||
+        (b0 === 203 && b1 === 0 && parts[2] === 113)
+      ) {
+        return { restricted: true, reason: 'Documentation or special-purpose IPv4 range blocked' };
       }
       // Multicast / Reserved (224.0.0.0/4 and 240.0.0.0/4)
       if (b0 >= 224) {
