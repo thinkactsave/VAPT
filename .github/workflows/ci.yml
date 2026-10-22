@@ -38,3 +38,7 @@ jobs:
         uses: actions/checkout@v4
       - name: Build production container
         run: docker build --pull --tag proofvapt:ci .
+      - name: Validate Compose deployment configuration
+        env:
+          PROOFVAPT_API_TOKEN: ci-only-validation-token-not-a-real-secret
+        run: docker compose config --quiet
