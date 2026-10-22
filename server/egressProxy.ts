@@ -45,16 +45,28 @@ export class ScopeEnforcingEgressProxy {
       return { restricted: true, reason: 'Cloud metadata service access prohibited (169.254.169.254)' };
     }
 
-    // IPv6 checks
+    // IPv4-mapped IPv6 addresses must be checked against the underlying IPv4
+    // policy; do not let an encoded link-local address bypass metadata blocks.
+    if (normalizedIp.startsWith('::ffff:')) {
+      const mappedIpv4 = normalizedIp.slice('::ffff:'.length);
+      if (net.isIP(mappedIpv4) !== 4) {
+        return { restricted: true, reason: 'Malformed IPv4-mapped IPv6 destination blocked' };
+      }
+      return ScopeEnforcingEgressProxy.isRestrictedIP(mappedIpv4, allowLabPrivate);
+    }
+
+    // Unspecified and link-local IPv6 ranges are never useful assessment targets
+    // and are blocked even in lab mode. Loopback and ULA are allowed only for a
+    // confirmed isolated lab target.
     if (
-      normalizedIp === '::1' ||
       normalizedIp === '::' ||
-      /^fe[89ab][0-9a-f]:/i.test(normalizedIp) ||
-      /^f[cd][0-9a-f]{2}:/i.test(normalizedIp) ||
-      normalizedIp.startsWith('::ffff:')
+      /^fe[89ab][0-9a-f]:/i.test(normalizedIp)
     ) {
+      return { restricted: true, reason: 'Unspecified or IPv6 link-local destination blocked' };
+    }
+    if (normalizedIp === '::1' || /^f[cd][0-9a-f]{2}:/i.test(normalizedIp)) {
       if (!allowLabPrivate) {
-        return { restricted: true, reason: 'IPv6 local/loopback/unique-local address prohibited without isolated lab network' };
+        return { restricted: true, reason: 'IPv6 loopback or unique-local address prohibited without isolated lab network' };
       }
     }
 
@@ -235,9 +247,22 @@ export class ScopeEnforcingEgressProxy {
       res.end('Only HTTP and HTTPS targets are supported');
       return;
     }
+    if (targetUrl.username || targetUrl.password || targetUrl.hash) {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Credentials and fragments are not allowed in proxy URLs');
+      return;
+    }
 
+    let normalizedPath = targetUrl.pathname;
+    try {
+      normalizedPath = decodeURIComponent(targetUrl.pathname);
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Malformed URL path encoding');
+      return;
+    }
     const excluded = this.config.target.excluded_paths || [];
-    if (excluded.some((p) => targetUrl.pathname === p || targetUrl.pathname.startsWith(p.endsWith('/') ? p : p + '/'))) {
+    if (excluded.some((p) => normalizedPath === p || normalizedPath.startsWith(p.endsWith('/') ? p : p + '/'))) {
       res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('Path is excluded from the authorized assessment scope');
       return;
@@ -337,7 +362,10 @@ export class ScopeEnforcingEgressProxy {
       const connectUrl = new URL(`http://${req.url || ''}`);
       hostname = connectUrl.hostname.replace(/^\[|\]$/g, '');
       port = connectUrl.port ? Number(connectUrl.port) : 443;
-      if (!hostname || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid CONNECT authority');
+      if (!hostname || !Number.isInteger(port) || port < 1 || port > 65535 ||
+          connectUrl.pathname !== '/' || connectUrl.search || connectUrl.hash || connectUrl.username || connectUrl.password) {
+        throw new Error('Invalid CONNECT authority');
+      }
     } catch {
       clientSocket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
       clientSocket.destroy();
