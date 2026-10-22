@@ -46,7 +46,8 @@ RUN set -eux; \
 
 WORKDIR /app
 COPY --from=build --chown=node:node /app/package.json ./package.json
-RUN npm install --omit=dev --no-audit --no-fund
+COPY --from=build --chown=node:node /app/package-lock.json ./package-lock.json
+RUN npm ci --omit=dev --no-audit --no-fund
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/dist-server ./dist-server
 COPY --from=build --chown=node:node /app/server/wordlists ./server/wordlists
