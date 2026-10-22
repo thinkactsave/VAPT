@@ -343,8 +343,8 @@ apiRouter.get('/scans/:id/metrics', (req, res) => {
     try {
       const configured = new URL(configuredLabUrl);
       const scanned = new URL(target.target_url);
-      const configuredPath = configured.pathname.replace(/\\/$/, '');
-      const scannedPath = scanned.pathname.replace(/\\/$/, '');
+      const configuredPath = configured.pathname.replace(/\/$/, '');
+      const scannedPath = scanned.pathname.replace(/\/$/, '');
       return configured.origin === scanned.origin && configuredPath === scannedPath;
     } catch {
       return false;
@@ -424,7 +424,7 @@ apiRouter.post('/lab/seed', (req, res) => {
     try {
       const savedUrl = new URL(target.target_url);
       return savedUrl.origin === labUrl.origin &&
-        savedUrl.pathname.replace(/\\/$/, '') === labUrl.pathname.replace(/\\/$/, '');
+        savedUrl.pathname.replace(/\/$/, '') === labUrl.pathname.replace(/\/$/, '');
     } catch {
       return false;
     }
