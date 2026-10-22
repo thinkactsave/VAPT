@@ -15,7 +15,7 @@ interface TargetScopeManagerProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (target: Partial<TargetProfile>, scanProfile: ScanProfile) => Promise<void>;
-  onSeedLab: () => void;
+  onSeedLab: () => Promise<void>;
 }
 
 export const TargetScopeManager: React.FC<TargetScopeManagerProps> = ({
