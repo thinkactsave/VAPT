@@ -1,6 +1,7 @@
 import http from 'http';
 import https from 'https';
 import tls from 'tls';
+import net from 'node:net';
 import { TargetProfile, UnifiedFinding, FindingEvidence, FindingSource, TestExecution } from '../src/types/proofvapt.js';
 import { db } from './db.js';
 
@@ -594,42 +595,112 @@ export class CustomSecurityProber {
     };
   }
 
-  private checkTLS(
+  private async checkTLS(
     host: string,
     port: number
   ): Promise<{ protocol?: string; authorized?: boolean; validTo?: string; issuer?: string; subject?: string; isDeprecated?: boolean }> {
-    return new Promise((resolve, reject) => {
-      const socket = tls.connect(
-        {
-          host,
-          port,
-          servername: host,
-          rejectUnauthorized: false
-        },
-        () => {
-          const cert = socket.getPeerCertificate();
-          const protocol = socket.getProtocol() || 'UNKNOWN';
-          const isDeprecated = protocol === 'TLSv1' || protocol === 'TLSv1.1' || protocol === 'SSLv3';
+    if (!this.target.allowed_ports.includes(port)) {
+      throw new Error('TLS probe port is outside the allowed target scope.');
+    }
 
-          resolve({
+    // A default modern TLS client never negotiates TLS 1.0/1.1, even if the
+    // server still supports them. Probe each deprecated protocol explicitly.
+    // All connections use the scope-enforcing proxy; no direct target socket.
+    const legacy10 = await this.tlsHandshakeThroughProxy(host, port, 'TLSv1', 'TLSv1');
+    if (legacy10) return { ...legacy10, isDeprecated: true };
+
+    const legacy11 = await this.tlsHandshakeThroughProxy(host, port, 'TLSv1.1', 'TLSv1.1');
+    if (legacy11) return { ...legacy11, isDeprecated: true };
+
+    const current = await this.tlsHandshakeThroughProxy(host, port);
+    if (!current) {
+      throw new Error('Could not negotiate a TLS connection using the tested protocol versions.');
+    }
+    return { ...current, isDeprecated: false };
+  }
+
+  private tlsHandshakeThroughProxy(
+    host: string,
+    port: number,
+    minVersion?: tls.SecureVersion,
+    maxVersion?: tls.SecureVersion
+  ): Promise<{ protocol: string; authorized: boolean; validTo?: string; issuer?: string; subject?: string } | null> {
+    return new Promise((resolve) => {
+      const cleanHost = host.replace(/^\\[|\\]$/g, '');
+      const authorityHost = cleanHost.includes(':') ? `[${cleanHost}]` : cleanHost;
+      const authority = `${authorityHost}:${port}`;
+      const proxySocket = net.connect(this.proxyPort, '127.0.0.1');
+      let finished = false;
+      let headerBuffer = Buffer.alloc(0);
+
+      const finish = (value: { protocol: string; authorized: boolean; validTo?: string; issuer?: string; subject?: string } | null) => {
+        if (finished) return;
+        finished = true;
+        resolve(value);
+      };
+      const fail = () => {
+        proxySocket.destroy();
+        finish(null);
+      };
+
+      proxySocket.setTimeout(8000, fail);
+      proxySocket.once('error', fail);
+
+      const onProxyData = (chunk: Buffer) => {
+        headerBuffer = Buffer.concat([headerBuffer, chunk]);
+        if (headerBuffer.length > 16 * 1024) return fail();
+        const headerEnd = headerBuffer.indexOf('\\r\\n\\r\\n');
+        if (headerEnd < 0) return;
+
+        const headerText = headerBuffer.subarray(0, headerEnd).toString('latin1');
+        const statusLine = headerText.split('\\r\\n', 1)[0] || '';
+        if (!/^HTTP\\/1\\.[01] 200(?: |$)/.test(statusLine)) {
+          proxySocket.removeListener('data', onProxyData);
+          return fail();
+        }
+
+        proxySocket.removeListener('data', onProxyData);
+        proxySocket.setTimeout(0);
+        proxySocket.removeListener('error', fail);
+        const extraBytes = headerBuffer.subarray(headerEnd + 4);
+        if (extraBytes.length) proxySocket.unshift(extraBytes);
+
+        const tlsOptions: tls.ConnectionOptions = {
+          socket: proxySocket,
+          rejectUnauthorized: false
+        };
+        if (net.isIP(cleanHost) === 0) tlsOptions.servername = cleanHost;
+        if (minVersion) tlsOptions.minVersion = minVersion;
+        if (maxVersion) tlsOptions.maxVersion = maxVersion;
+        if (minVersion === 'TLSv1' || minVersion === 'TLSv1.1') {
+          tlsOptions.ciphers = 'DEFAULT@SECLEVEL=0';
+        }
+
+        const secureSocket = tls.connect(tlsOptions);
+        secureSocket.setTimeout(8000, () => secureSocket.destroy(new Error('TLS handshake timed out')));
+        secureSocket.once('error', () => {
+          secureSocket.destroy();
+          finish(null);
+        });
+        secureSocket.once('secureConnect', () => {
+          const cert = secureSocket.getPeerCertificate();
+          const protocol = secureSocket.getProtocol() || 'UNKNOWN';
+          finish({
             protocol,
-            authorized: socket.authorized,
+            authorized: secureSocket.authorized,
             validTo: cert.valid_to,
             issuer: typeof cert.issuer === 'object' ? JSON.stringify(cert.issuer) : cert.issuer,
-            subject: typeof cert.subject === 'object' ? JSON.stringify(cert.subject) : cert.subject,
-            isDeprecated
+            subject: typeof cert.subject === 'object' ? JSON.stringify(cert.subject) : cert.subject
           });
-          socket.end();
-        }
-      );
+          secureSocket.end();
+        });
+      };
 
-      socket.setTimeout(8000, () => {
-        socket.destroy();
-        reject(new Error('TLS handshake timed out'));
-      });
-
-      socket.on('error', (err) => {
-        reject(err);
+      proxySocket.on('data', onProxyData);
+      proxySocket.once('connect', () => {
+        proxySocket.write(
+          `CONNECT ${authority} HTTP/1.1\\r\\nHost: ${authority}\\r\\nUser-Agent: ProofVAPT-TLS-Prober/1.0\\r\\n\\r\\n`
+        );
       });
     });
   }
