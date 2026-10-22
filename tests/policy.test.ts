@@ -7,10 +7,12 @@ import { TargetProfile } from '../src/types/proofvapt.js';
 test('always blocks the cloud metadata link-local address, including lab mode', () => {
   assert.equal(ScopeEnforcingEgressProxy.isRestrictedIP('169.254.169.254', true).restricted, true);
   assert.equal(ScopeEnforcingEgressProxy.isRestrictedIP('169.254.10.20', true).restricted, true);
+  assert.equal(ScopeEnforcingEgressProxy.isRestrictedIP('::ffff:169.254.169.254', true).restricted, true);
+  assert.equal(ScopeEnforcingEgressProxy.isRestrictedIP('::', true).restricted, true);
 });
 
 test('blocks private and local destinations for live scans', () => {
-  for (const ip of ['127.0.0.1', '10.0.0.2', '172.16.0.2', '192.168.1.2', '100.64.0.1', '224.0.0.1', 'fd00::1', 'fe80::1']) {
+  for (const ip of ['127.0.0.1', '10.0.0.2', '172.16.0.2', '192.168.1.2', '100.64.0.1', '224.0.0.1', 'fd00::1', 'fe80::1', '::ffff:127.0.0.1']) {
     assert.equal(ScopeEnforcingEgressProxy.isRestrictedIP(ip, false).restricted, true, `expected ${ip} to be blocked`);
   }
 });
