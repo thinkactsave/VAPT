@@ -50,6 +50,17 @@ export class RemediationVerificationEngine {
     if (!Array.isArray(target.allowed_ports) || !target.allowed_ports.includes(port)) {
       throw new Error('Retest blocked: finding port is outside the original scan scope.');
     }
+    let decodedPath: string;
+    try {
+      decodedPath = decodeURIComponent(url.pathname);
+    } catch {
+      throw new Error('Retest blocked: malformed path encoding.');
+    }
+    if ((target.excluded_paths || []).some((excluded) =>
+      decodedPath === excluded || decodedPath.startsWith(excluded.endsWith('/') ? excluded : excluded + '/')
+    )) {
+      throw new Error('Retest blocked: finding path is excluded from the authorized assessment.');
+    }
     if (simulatedFixApplied && (process.env.NODE_ENV === 'production' || target.mode !== 'lab')) {
       throw new Error('Simulated remediation is available only for non-production lab assessments.');
     }
@@ -59,8 +70,8 @@ export class RemediationVerificationEngine {
 
     try {
       if (simulatedFixApplied) {
-        outcome = 'remediated';
-        retestEvidence = 'Simulation recorded for a non-production lab assessment. No network request was made; this is not evidence of a real production fix.';
+        outcome = 'inconclusive';
+        retestEvidence = 'Simulation recorded for a non-production lab assessment. No network request was made and remediation is not marked verified.';
       } else {
         const requestHeaders: Record<string, string> = {
           'User-Agent': 'ProofVAPT-Verifier/1.0',
@@ -95,13 +106,15 @@ export class RemediationVerificationEngine {
           const allowOrigin = response.headers['access-control-allow-origin'];
           const allowCredentials = String(response.headers['access-control-allow-credentials'] || '').toLowerCase() === 'true';
           const reflectsUntrustedOrigin = allowOrigin === 'https://proofvapt-untrusted.invalid';
-          const wildcardWithCredentials = allowOrigin === '*' && allowCredentials;
-          if (reflectsUntrustedOrigin || wildcardWithCredentials) {
+          if (reflectsUntrustedOrigin && allowCredentials) {
             outcome = 'still_vulnerable';
-            retestEvidence = `Permissive CORS behavior persists: Access-Control-Allow-Origin=${String(allowOrigin)}, credentials=${allowCredentials}.`;
-          } else {
+            retestEvidence = `The target reflects an untrusted Origin and enables credentials. Access-Control-Allow-Origin=${String(allowOrigin)}; credentials=true.`;
+          } else if (!allowOrigin || allowOrigin === 'null') {
             outcome = 'remediated';
-            retestEvidence = `The untrusted Origin was not reflected in a way that indicates permissive credentialed CORS. Access-Control-Allow-Origin=${String(allowOrigin || 'not set')}.`;
+            retestEvidence = 'The response did not return an Access-Control-Allow-Origin value for the probe.';
+          } else {
+            outcome = 'inconclusive';
+            retestEvidence = `CORS response observed (Access-Control-Allow-Origin=${String(allowOrigin)}, credentials=${allowCredentials}). Wildcard or reflected origin alone is not sufficient to confirm impact on sensitive data; manually verify the resource and browser credential behavior.`;
           }
         } else {
           outcome = 'inconclusive';
