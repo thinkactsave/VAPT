@@ -18,6 +18,7 @@ export class ScopeEnforcingEgressProxy {
   private requestCount: number = 0;
   private errorCount: number = 0;
   private isStopped: boolean = false;
+  private readonly sockets = new Set<net.Socket>();
 
   constructor(config: EgressProxyConfig) {
     this.config = config;
@@ -31,55 +32,80 @@ export class ScopeEnforcingEgressProxy {
     return this.requestCount;
   }
 
+  private static isInCidr(ip: string, cidr: string): boolean {
+    const [base, prefixText] = cidr.split("/");
+    const prefix = Number(prefixText);
+    const toNumber = (value: string) =>
+      value.split(".").reduce((acc, octet) => ((acc << 8) | Number(octet)) >>> 0, 0);
+    const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+    return (toNumber(ip) & mask) >>> 0 === (toNumber(base) & mask) >>> 0;
+  }
+
   /**
-   * Validates if a destination IP address falls into restricted/private ranges
+   * Rejects special-use addresses. Private and loopback ranges are allowed only
+   * for an explicitly configured lab target; the metadata/link-local ranges are
+   * blocked in every mode.
    */
-  public static isRestrictedIP(ip: string, allowLabPrivate: boolean): { restricted: boolean; reason?: string } {
-    // Cloud metadata service is ALWAYS blocked under all circumstances
-    if (ip === '169.254.169.254' || ip.startsWith('169.254.')) {
-      return { restricted: true, reason: 'Cloud metadata service access prohibited (169.254.169.254)' };
+  public static isRestrictedIP(
+    ip: string,
+    allowPrivateLab: boolean,
+    allowLoopbackLab = allowPrivateLab
+  ): { restricted: boolean; reason?: string } {
+    const address = ip.replace(/^\[|\]$/g, "").toLowerCase();
+    const version = net.isIP(address);
+    if (!version) return { restricted: true, reason: "Destination is not a valid IP address" };
+
+    if (version === 4) {
+      const alwaysBlocked = [
+        "0.0.0.0/8", "169.254.0.0/16", "192.0.0.0/24", "192.0.2.0/24",
+        "192.88.99.0/24", "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24",
+        "224.0.0.0/4", "240.0.0.0/4"
+      ];
+      if (alwaysBlocked.some((cidr) => this.isInCidr(address, cidr))) {
+        return { restricted: true, reason: "Special-use, link-local, documentation, multicast or reserved IPv4 range blocked" };
+      }
+      if (this.isInCidr(address, "127.0.0.0/8")) {
+        return allowLoopbackLab
+          ? { restricted: false }
+          : { restricted: true, reason: "Loopback is only permitted for an explicitly configured local lab target" };
+      }
+      const privateRanges = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10"];
+      if (privateRanges.some((cidr) => this.isInCidr(address, cidr)) && !allowPrivateLab) {
+        return { restricted: true, reason: "Private or shared-address range blocked outside explicitly enabled lab networking" };
+      }
+      return { restricted: false };
     }
 
-    // IPv6 checks
-    if (ip === '::1' || ip === '::' || ip.toLowerCase().startsWith('fe80:') || ip.toLowerCase().startsWith('fc00:')) {
-      if (!allowLabPrivate) {
-        return { restricted: true, reason: 'IPv6 local/loopback/unique-local address prohibited without isolated lab network' };
+    // Convert IPv4-mapped IPv6 addresses before applying IPv4 controls.
+    if (address.startsWith("::ffff:")) {
+      const suffix = address.slice("::ffff:".length);
+      if (net.isIP(suffix) === 4) {
+        return this.isRestrictedIP(suffix, allowPrivateLab, allowLoopbackLab);
       }
+      const words = suffix.split(":");
+      if (words.length === 2 && words.every((word) => /^[0-9a-f]{1,4}$/.test(word))) {
+        const packed = (parseInt(words[0], 16) * 0x10000) + parseInt(words[1], 16);
+        const ipv4 = [24, 16, 8, 0].map((shift) => (packed >>> shift) & 255).join(".");
+        return this.isRestrictedIP(ipv4, allowPrivateLab, allowLoopbackLab);
+      }
+      return { restricted: true, reason: "Unrecognized IPv4-mapped IPv6 destination blocked" };
     }
 
-    // IPv4 Checks
-    const parts = ip.split('.').map(Number);
-    if (parts.length === 4 && parts.every((p) => !isNaN(p) && p >= 0 && p <= 255)) {
-      const [b0, b1] = parts;
-
-      // 0.0.0.0/8
-      if (b0 === 0) return { restricted: true, reason: 'Current network source (0.0.0.0/8) blocked' };
-      // 127.0.0.0/8 (Loopback)
-      if (b0 === 127) {
-        if (!allowLabPrivate) return { restricted: true, reason: 'Loopback address (127.0.0.0/8) blocked without isolated lab policy' };
-      }
-      // 10.0.0.0/8 (RFC 1918)
-      if (b0 === 10) {
-        if (!allowLabPrivate) return { restricted: true, reason: 'Private network (10.0.0.0/8) blocked without isolated lab policy' };
-      }
-      // 172.16.0.0/12 (RFC 1918)
-      if (b0 === 172 && b1 >= 16 && b1 <= 31) {
-        if (!allowLabPrivate) return { restricted: true, reason: 'Private network (172.16.0.0/12) blocked without isolated lab policy' };
-      }
-      // 192.168.0.0/16 (RFC 1918)
-      if (b0 === 192 && b1 === 168) {
-        if (!allowLabPrivate) return { restricted: true, reason: 'Private network (192.168.0.0/16) blocked without isolated lab policy' };
-      }
-      // 100.64.0.0/10 (Carrier-grade NAT)
-      if (b0 === 100 && b1 >= 64 && b1 <= 127) {
-        if (!allowLabPrivate) return { restricted: true, reason: 'Carrier-grade NAT space blocked' };
-      }
-      // Multicast / Reserved (224.0.0.0/4 and 240.0.0.0/4)
-      if (b0 >= 224) {
-        return { restricted: true, reason: 'Multicast or reserved IP range blocked' };
-      }
+    if (address === "::") return { restricted: true, reason: "Unspecified IPv6 destination blocked" };
+    if (address === "::1") {
+      return allowLoopbackLab
+        ? { restricted: false }
+        : { restricted: true, reason: "IPv6 loopback is only permitted for an explicitly configured local lab target" };
     }
-
+    if (address.startsWith("fe80:") || address.startsWith("ff")) {
+      return { restricted: true, reason: "IPv6 link-local or multicast destination blocked" };
+    }
+    if ((address.startsWith("fc") || address.startsWith("fd")) && !allowPrivateLab) {
+      return { restricted: true, reason: "IPv6 unique-local destinations are blocked outside explicitly enabled lab networking" };
+    }
+    if (address.startsWith("2001:db8:")) {
+      return { restricted: true, reason: "IPv6 documentation range blocked" };
+    }
     return { restricted: false };
   }
 
@@ -91,41 +117,55 @@ export class ScopeEnforcingEgressProxy {
     port: number
   ): Promise<{ allowed: boolean; ip?: string; reason?: string }> {
     const { target } = this.config;
+    const requestedHost = hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
+    const authorizedHost = target.hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
 
-    // Port scope validation
-    if (target.allowed_ports.length > 0 && !target.allowed_ports.includes(port)) {
-      return { allowed: false, reason: `Port ${port} is not in authorized ports whitelist: [${target.allowed_ports.join(', ')}]` };
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      return { allowed: false, reason: "Invalid destination port" };
+    }
+    if (target.allowed_ports.length === 0 || !target.allowed_ports.includes(port)) {
+      return { allowed: false, reason: `Port ${port} is not in the authorized port whitelist` };
     }
 
-    // Hostname scope validation
-    const targetHost = target.hostname.toLowerCase();
-    const reqHost = hostname.toLowerCase();
-    const isHostMatched = reqHost === targetHost || reqHost.endsWith(`.${targetHost}`) || targetHost === 'localhost' || targetHost === '127.0.0.1';
-
-    if (!isHostMatched && target.mode !== 'lab') {
-      return { allowed: false, reason: `Host '${hostname}' is outside authorized scope target '${target.hostname}'` };
+    // Intentionally exact-host matching. Lab mode is not a wildcard allowlist.
+    if (requestedHost !== authorizedHost) {
+      return { allowed: false, reason: `Host '${hostname}' is outside the exact authorized host '${target.hostname}'` };
     }
 
-    // Dynamic DNS resolution at connection time
+    const labConfirmed = target.mode === "lab" && target.is_isolated_lab_network_confirmed;
+    const targetIsLoopback = ["localhost", "127.0.0.1", "::1"].includes(authorizedHost);
+    const allowLoopbackLab = labConfirmed && targetIsLoopback;
+    // A UI acknowledgement alone is not proof of isolation for RFC1918/ULA
+    // destinations. An operator must deliberately enable this deployment-level
+    // opt-in and separately isolate worker egress at the network layer.
+    const allowPrivateLab = labConfirmed && process.env.PROOFVAPT_ALLOW_PRIVATE_LAB_TARGETS === "true";
+
     try {
-      const addresses = await dns.lookup(hostname, { all: true });
-      if (!addresses || addresses.length === 0) {
-        return { allowed: false, reason: `DNS resolution failed for host '${hostname}'` };
+      const addresses = net.isIP(requestedHost)
+        ? [{ address: requestedHost, family: net.isIP(requestedHost) }]
+        : await dns.lookup(requestedHost, { all: true, verbatim: true });
+
+      if (!addresses.length) {
+        return { allowed: false, reason: `DNS resolution returned no addresses for '${hostname}'` };
       }
 
       for (const addr of addresses) {
-        const ipCheck = ScopeEnforcingEgressProxy.isRestrictedIP(
+        const check = ScopeEnforcingEgressProxy.isRestrictedIP(
           addr.address,
-          target.is_isolated_lab_network_confirmed
+          allowPrivateLab,
+          allowLoopbackLab
         );
-        if (ipCheck.restricted) {
-          return { allowed: false, ip: addr.address, reason: ipCheck.reason };
+        if (check.restricted) {
+          return { allowed: false, ip: addr.address, reason: check.reason };
         }
       }
 
       return { allowed: true, ip: addresses[0].address };
-    } catch (dnsErr: any) {
-      return { allowed: false, reason: `DNS lookup failed: ${dnsErr.message}` };
+    } catch (err) {
+      return {
+        allowed: false,
+        reason: `DNS resolution failed for '${hostname}': ${err instanceof Error ? err.message : "unknown error"}`
+      };
     }
   }
 
@@ -136,6 +176,11 @@ export class ScopeEnforcingEgressProxy {
     return new Promise((resolve, reject) => {
       this.server = http.createServer(async (req, res) => {
         await this.handleHttpRequest(req, res);
+      });
+
+      this.server.on("connection", (socket) => {
+        this.sockets.add(socket);
+        socket.once("close", () => this.sockets.delete(socket));
       });
 
       // Handle HTTPS CONNECT tunneling
@@ -165,18 +210,15 @@ export class ScopeEnforcingEgressProxy {
       return { allowed: false, reason: 'Proxy has stopped processing new requests' };
     }
 
-    this.requestCount++;
-    const maxBudget = this.config.target.max_request_budget || 2000;
-
+    const maxBudget = Math.max(1, Math.floor(this.config.target.max_request_budget || 2000));
     if (this.requestCount >= maxBudget) {
       this.isStopped = true;
-      const msg = `Global request budget (${maxBudget}) reached. Stop condition tripped.`;
-      if (this.config.onBudgetExceeded) {
-        this.config.onBudgetExceeded(this.requestCount);
-      }
+      const msg = `Proxy event budget (${maxBudget}) reached. Stop condition tripped.`;
+      if (this.config.onBudgetExceeded) this.config.onBudgetExceeded(this.requestCount);
       return { allowed: false, reason: msg };
     }
 
+    this.requestCount++;
     return { allowed: true };
   }
 
@@ -201,8 +243,14 @@ export class ScopeEnforcingEgressProxy {
       targetUrl = new URL(`http://${req.headers.host}${req.url}`);
     }
 
+    if (targetUrl.protocol !== "http:") {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Use HTTP proxy requests for http:// targets and CONNECT for HTTPS targets." }));
+      return;
+    }
+
     const host = targetUrl.hostname;
-    const port = targetUrl.port ? parseInt(targetUrl.port, 10) : targetUrl.protocol === 'https:' ? 443 : 80;
+    const port = targetUrl.port ? parseInt(targetUrl.port, 10) : 80;
 
     const validation = await this.validateDestination(host, port);
 
@@ -215,8 +263,9 @@ export class ScopeEnforcingEgressProxy {
       destination_host: host,
       destination_port: port,
       destination_ip: validation.ip || 'unresolved',
-      url: targetUrl.href,
-      status_code: validation.allowed ? 200 : 403,
+      // Do not persist query strings: they can contain tokens, email addresses or other sensitive values.
+      url: `${targetUrl.origin}${targetUrl.pathname}`,
+      status_code: validation.allowed ? 0 : 403,
       blocked: !validation.allowed,
       block_reason: validation.reason,
       client_tool: (req.headers['user-agent'] || 'unknown').includes('ffuf')
@@ -246,7 +295,7 @@ export class ScopeEnforcingEgressProxy {
         method: req.method,
         headers: {
           ...req.headers,
-          host: req.headers.host || host,
+          host: targetUrl.host,
         },
       },
       (proxyRes) => {
@@ -283,8 +332,17 @@ export class ScopeEnforcingEgressProxy {
       return;
     }
 
-    const [hostname, portStr] = (req.url || '').split(':');
-    const port = parseInt(portStr || '443', 10);
+    let hostname: string;
+    let port: number;
+    try {
+      const authority = new URL(`http://${req.url || ""}`);
+      hostname = authority.hostname;
+      port = authority.port ? Number(authority.port) : 443;
+    } catch {
+      clientSocket.write("HTTP/1.1 400 Bad Request\\r\\n\\r\\n");
+      clientSocket.destroy();
+      return;
+    }
 
     const validation = await this.validateDestination(hostname, port);
 
@@ -297,7 +355,7 @@ export class ScopeEnforcingEgressProxy {
       destination_port: port,
       destination_ip: validation.ip || 'unresolved',
       url: `https://${hostname}:${port}`,
-      status_code: validation.allowed ? 200 : 403,
+      status_code: validation.allowed ? 0 : 403,
       blocked: !validation.allowed,
       block_reason: validation.reason,
       client_tool: (req.headers['user-agent'] || '').includes('ZAP') ? 'owasp_zap' : 'scanner_tool',
@@ -332,6 +390,7 @@ export class ScopeEnforcingEgressProxy {
 
   public async stop(): Promise<void> {
     this.isStopped = true;
+    for (const socket of this.sockets) socket.destroy();
     if (this.server) {
       return new Promise((resolve) => {
         this.server?.close(() => {
