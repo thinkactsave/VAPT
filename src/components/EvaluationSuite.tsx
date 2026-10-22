@@ -27,10 +27,10 @@ export const EvaluationSuite: React.FC<EvaluationSuiteProps> = ({
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="bg-[#141a21] border border-[#2a333d] rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold text-cyan-400 uppercase tracking-wider font-mono">
+            <span className="text-xs font-semibold text-[#83cfc0] uppercase tracking-wider font-mono">
               MSc Research Evaluation Suite
             </span>
             <span className="text-slate-600">·</span>
@@ -46,7 +46,7 @@ export const EvaluationSuite: React.FC<EvaluationSuiteProps> = ({
 
         <button
           onClick={onRefreshEvaluation}
-          className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg transition-colors whitespace-nowrap shadow-sm shadow-cyan-950"
+          className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-[#0a1714] bg-[#83cfc0] hover:bg-[#a1e2d5] rounded-lg transition-colors whitespace-nowrap shadow-sm shadow-cyan-950"
         >
           <FlaskConical className="w-3.5 h-3.5" />
           <span>Recalculate Metrics</span>
@@ -56,12 +56,12 @@ export const EvaluationSuite: React.FC<EvaluationSuiteProps> = ({
       {/* Top Mathematical Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Precision Card */}
-        <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4 space-y-2">
+        <div className="bg-[#141a21] border border-[#2a333d] rounded-xl p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span className="font-semibold text-white">Precision</span>
-            <span className="text-[10px] font-mono text-cyan-400">TP / (TP + FP)</span>
+            <span className="text-[10px] font-mono text-[#83cfc0]">TP / (TP + FP)</span>
           </div>
-          <div className="text-2xl font-bold text-cyan-300 font-mono tabular-nums">
+          <div className="text-2xl font-bold text-[#a1e2d5] font-mono tabular-nums">
             {metrics?.precision !== 'Undefined' && metrics?.precision !== undefined
               ? `${(Number(metrics.precision) * 100).toFixed(1)}%`
               : 'Undefined'}
@@ -72,10 +72,10 @@ export const EvaluationSuite: React.FC<EvaluationSuiteProps> = ({
         </div>
 
         {/* Recall Card */}
-        <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4 space-y-2">
+        <div className="bg-[#141a21] border border-[#2a333d] rounded-xl p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span className="font-semibold text-white">Recall (Detection)</span>
-            <span className="text-[10px] font-mono text-cyan-400">TP / (TP + FN)</span>
+            <span className="text-[10px] font-mono text-[#83cfc0]">TP / (TP + FN)</span>
           </div>
           <div className="text-2xl font-bold text-emerald-400 font-mono tabular-nums">
             {metrics?.recall !== 'Undefined' && metrics?.recall !== undefined
@@ -88,7 +88,7 @@ export const EvaluationSuite: React.FC<EvaluationSuiteProps> = ({
         </div>
 
         {/* False Positive Rate */}
-        <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4 space-y-2">
+        <div className="bg-[#141a21] border border-[#2a333d] rounded-xl p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span className="font-semibold text-white">False Positive Rate</span>
             <span className="text-[10px] font-mono text-amber-400">FP / (FP + TN)</span>
@@ -104,7 +104,7 @@ export const EvaluationSuite: React.FC<EvaluationSuiteProps> = ({
         </div>
 
         {/* Duplicate Reduction */}
-        <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4 space-y-2">
+        <div className="bg-[#141a21] border border-[#2a333d] rounded-xl p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span className="font-semibold text-white">Duplicate Reduction</span>
             <span className="text-[10px] font-mono text-indigo-400">Δdup %</span>
@@ -123,9 +123,9 @@ export const EvaluationSuite: React.FC<EvaluationSuiteProps> = ({
       {/* Confusion Matrix & Overhead */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Confusion Matrix Table */}
-        <div className="lg:col-span-2 bg-[#111827] border border-[#1F2937] rounded-xl p-5 space-y-4">
+        <div className="lg:col-span-2 bg-[#141a21] border border-[#2a333d] rounded-xl p-5 space-y-4">
           <h3 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
-            <Calculator className="w-4 h-4 text-cyan-400" />
+            <Calculator className="w-4 h-4 text-[#83cfc0]" />
             <span>Empirical Confusion Matrix (Controlled Test Instances)</span>
           </h3>
 
@@ -148,7 +148,7 @@ export const EvaluationSuite: React.FC<EvaluationSuiteProps> = ({
               <span className="text-[11px] text-slate-400 font-sans block">Known vulnerabilities missed</span>
             </div>
 
-            <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-1">
+            <div className="p-4 bg-[#11171e] border border-[#2a333d] rounded-xl space-y-1">
               <span className="text-slate-400 text-[10px] uppercase tracking-wider font-semibold">True Negatives (TN)</span>
               <div className="text-2xl font-bold text-white tabular-nums">{metrics?.tn_count ?? 0}</div>
               <span className="text-[11px] text-slate-400 font-sans block">Hardened controls correctly passed</span>
@@ -156,39 +156,39 @@ export const EvaluationSuite: React.FC<EvaluationSuiteProps> = ({
           </div>
 
           <div className="text-[11px] text-slate-500 font-mono pt-1">
-            * Sample size: <span className="text-white font-semibold">{groundTruth.length}</span> documented test cases in evaluation testbed. Division by zero handled as <code className="text-cyan-400">Undefined</code>.
+            * Sample size: <span className="text-white font-semibold">{groundTruth.length}</span> documented test cases in evaluation testbed. Division by zero handled as <code className="text-[#83cfc0]">Undefined</code>.
           </div>
         </div>
 
         {/* Scan Overhead Metrics */}
-        <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-5 space-y-4">
+        <div className="bg-[#141a21] border border-[#2a333d] rounded-xl p-5 space-y-4">
           <h3 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
-            <Activity className="w-4 h-4 text-cyan-400" />
+            <Activity className="w-4 h-4 text-[#83cfc0]" />
             <span>Orchestration Overhead</span>
           </h3>
 
           <div className="space-y-4 pt-1 text-xs">
-            <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg space-y-1">
+            <div className="p-3 bg-[#11171e] border border-[#2a333d] rounded-lg space-y-1">
               <div className="flex items-center justify-between text-slate-400">
                 <span>Scan Duration</span>
                 <span className="font-mono text-white font-semibold tabular-nums">{metrics?.duration_seconds ?? 0}s</span>
               </div>
               <div className="text-[11px] text-slate-500 font-mono">
-                Overhead vs. Raw ZAP: <span className="text-cyan-400">{metrics?.time_overhead_pct !== 'Undefined' ? `${metrics?.time_overhead_pct}%` : 'N/A'}</span>
+                Overhead vs. Raw ZAP: <span className="text-[#83cfc0]">{metrics?.time_overhead_pct !== 'Undefined' ? `${metrics?.time_overhead_pct}%` : 'N/A'}</span>
               </div>
             </div>
 
-            <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg space-y-1">
+            <div className="p-3 bg-[#11171e] border border-[#2a333d] rounded-lg space-y-1">
               <div className="flex items-center justify-between text-slate-400">
                 <span>Total Egress Requests</span>
                 <span className="font-mono text-white font-semibold tabular-nums">{metrics?.total_requests ?? 0}</span>
               </div>
               <div className="text-[11px] text-slate-500 font-mono">
-                Wire Traffic vs. Baseline: <span className="text-cyan-400">{metrics?.request_overhead_pct !== 'Undefined' ? `${metrics?.request_overhead_pct}%` : 'N/A'}</span>
+                Wire Traffic vs. Baseline: <span className="text-[#83cfc0]">{metrics?.request_overhead_pct !== 'Undefined' ? `${metrics?.request_overhead_pct}%` : 'N/A'}</span>
               </div>
             </div>
 
-            <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg space-y-1">
+            <div className="p-3 bg-[#11171e] border border-[#2a333d] rounded-lg space-y-1">
               <div className="flex items-center justify-between text-slate-400">
                 <span>Verification Accuracy</span>
                 <span className="font-mono text-emerald-400 font-semibold tabular-nums">
@@ -206,8 +206,8 @@ export const EvaluationSuite: React.FC<EvaluationSuiteProps> = ({
       </div>
 
       {/* Ground Truth Instances Table */}
-      <div className="bg-[#111827] border border-[#1F2937] rounded-xl overflow-hidden">
-        <div className="p-4 bg-slate-900/80 border-b border-[#1F2937] flex items-center justify-between">
+      <div className="bg-[#141a21] border border-[#2a333d] rounded-xl overflow-hidden">
+        <div className="p-4 bg-[#171e25] border-b border-[#2a333d] flex items-center justify-between">
           <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider font-mono">
             Juice Shop Ground-Truth Catalog (MSc Empirical Benchmark)
           </h3>
@@ -216,7 +216,7 @@ export const EvaluationSuite: React.FC<EvaluationSuiteProps> = ({
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs font-mono">
-            <thead className="bg-slate-900/40 border-b border-[#1F2937] text-slate-400 uppercase text-[10px]">
+            <thead className="bg-slate-900/40 border-b border-[#2a333d] text-slate-400 uppercase text-[10px]">
               <tr>
                 <th className="py-2.5 px-4">Test ID</th>
                 <th className="py-2.5 px-4">Flaw Name</th>
@@ -229,7 +229,7 @@ export const EvaluationSuite: React.FC<EvaluationSuiteProps> = ({
             <tbody className="divide-y divide-slate-800/60 text-[11px]">
               {groundTruth.map((gt) => (
                 <tr key={gt.id} className="hover:bg-slate-900/40">
-                  <td className="py-2.5 px-4 text-cyan-400 font-semibold">{gt.id}</td>
+                  <td className="py-2.5 px-4 text-[#83cfc0] font-semibold">{gt.id}</td>
                   <td className="py-2.5 px-4 text-slate-200 font-sans">{gt.name}</td>
                   <td className="py-2.5 px-4 text-slate-400 truncate max-w-xs">{gt.endpoint}</td>
                   <td className="py-2.5 px-4 text-slate-300">{gt.owasp_category}</td>
