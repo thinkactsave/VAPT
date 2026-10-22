@@ -182,8 +182,8 @@ apiRouter.post('/scans', async (req, res) => {
   const { target_id, scan_profile = 'passive_only' } = req.body || {};
   const target = db.getTarget(target_id);
 
-  if (!['passive_only', 'standard_active', 'authenticated_lab'].includes(scan_profile)) {
-    res.status(400).json({ error: 'Unsupported scan profile.' });
+  if (!['passive_only', 'standard_active'].includes(scan_profile)) {
+    res.status(400).json({ error: 'Unsupported scan profile. Authenticated scanning is not implemented yet.' });
     return;
   }
   if ((scan_profile === 'standard_active' || scan_profile === 'authenticated_lab') &&
