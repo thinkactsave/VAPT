@@ -180,6 +180,12 @@ export default function App() {
     if (authState !== 'ready') return;
     fetchToolStatus();
     fetchScans();
+    apiFetch('/api/tests/registry')
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Could not load OWASP test registry.');
+        setTestRegistry(await response.json());
+      })
+      .catch((error) => console.error('Failed to load OWASP test registry:', error));
   }, [authState, fetchScans, apiFetch]);
 
   // Polling while scan is running
