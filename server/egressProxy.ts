@@ -17,6 +17,7 @@ export class ScopeEnforcingEgressProxy {
   private config: EgressProxyConfig;
   private requestCount: number = 0;
   private errorCount: number = 0;
+  private nextRequestAt = 0;
   private isStopped: boolean = false;
 
   constructor(config: EgressProxyConfig) {
@@ -125,7 +126,7 @@ export class ScopeEnforcingEgressProxy {
       for (const addr of addresses) {
         const ipCheck = ScopeEnforcingEgressProxy.isRestrictedIP(
           addr.address,
-          target.is_isolated_lab_network_confirmed
+          target.mode === 'lab' && target.is_isolated_lab_network_confirmed
         );
         if (ipCheck.restricted) {
           return { allowed: false, ip: addr.address, reason: ipCheck.reason };
@@ -169,6 +170,16 @@ export class ScopeEnforcingEgressProxy {
     });
   }
 
+  private async waitForRateLimit(): Promise<void> {
+    const configuredRate = Number(this.config.target.rate_limit_rps) || 10;
+    const requestsPerSecond = Math.min(30, Math.max(1, configuredRate));
+    const now = Date.now();
+    const scheduledAt = Math.max(now, this.nextRequestAt);
+    this.nextRequestAt = scheduledAt + 1000 / requestsPerSecond;
+    const delay = scheduledAt - now;
+    if (delay > 0) await new Promise<void>((resolve) => setTimeout(resolve, delay));
+  }
+
   private checkBudgetAndLimits(): { allowed: boolean; reason?: string } {
     if (this.isStopped) {
       return { allowed: false, reason: 'Proxy has stopped processing new requests' };
@@ -190,6 +201,7 @@ export class ScopeEnforcingEgressProxy {
   }
 
   private async handleHttpRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+    await this.waitForRateLimit();
     const budgetCheck = this.checkBudgetAndLimits();
     if (!budgetCheck.allowed) {
       res.writeHead(429, { 'Content-Type': 'application/json' });
@@ -305,6 +317,7 @@ export class ScopeEnforcingEgressProxy {
     clientSocket: net.Socket,
     head: Buffer
   ) {
+    await this.waitForRateLimit();
     const budgetCheck = this.checkBudgetAndLimits();
     if (!budgetCheck.allowed) {
       clientSocket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n');
