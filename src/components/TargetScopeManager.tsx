@@ -83,22 +83,34 @@ export const TargetScopeManager: React.FC<TargetScopeManagerProps> = ({
 
     setIsSubmitting(true);
     try {
-      const ports = allowedPorts
-        .split(',')
-        .map((p) => parseInt(p.trim(), 10))
-        .filter((p) => !isNaN(p) && p > 0 && p <= 65535);
+      const parsedUrl = new URL(targetUrl);
+      const portParts = allowedPorts.split(',').map((p) => p.trim());
+      const ports = portParts.map((p) => Number(p));
+      if (!ports.length || ports.some((p) => !Number.isInteger(p) || p < 1 || p > 65535)) {
+        setError('Enter valid permitted ports separated by commas (1–65535).');
+        return;
+      }
+      const targetPort = parsedUrl.port ? Number(parsedUrl.port) : (parsedUrl.protocol === 'https:' ? 443 : 80);
+      if (!ports.includes(targetPort)) {
+        setError(`Add the target URL's port (${targetPort}) to the permitted ports list.`);
+        return;
+      }
 
       const exclusions = excludedPaths
         .split(',')
         .map((p) => p.trim())
         .filter(Boolean);
+      if (exclusions.some((p) => !p.startsWith('/') || p.startsWith('//'))) {
+        setError('Each excluded path must begin with a single slash, for example /logout.');
+        return;
+      }
 
       await onSubmit(
         {
           name: name || new URL(targetUrl).hostname,
           mode,
           target_url: targetUrl,
-          allowed_ports: ports.length > 0 ? ports : [80, 443],
+          allowed_ports: [...new Set(ports)],
           excluded_paths: exclusions,
           rate_limit_rps: rateLimit,
           max_request_budget: requestBudget,
@@ -115,16 +127,19 @@ export const TargetScopeManager: React.FC<TargetScopeManagerProps> = ({
     }
   };
 
-  const handleQuickJuiceShop = () => {
-    setTargetUrl('http://localhost:3000');
-    setName('OWASP Juice Shop (Local Lab Benchmark)');
-    setMode('lab');
-    setScanProfile('standard_active');
-    setAllowedPorts('80, 443, 3000');
-    setRateLimit(15);
-    setRequestBudget(2500);
-    setLabConfirmed(true);
-    setActiveConfirmed(true);
+  const handleQuickJuiceShop = async () => {
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      // The server owns the canonical lab URL, which differs between local
+      // development and the container network.
+      await onSeedLab();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start the configured lab benchmark.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -166,14 +181,15 @@ export const TargetScopeManager: React.FC<TargetScopeManagerProps> = ({
           <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg flex items-center justify-between">
             <div>
               <div className="font-semibold text-white">Preset: OWASP Juice Shop Lab</div>
-              <div className="text-[11px] text-slate-400">Quick-load configured local vulnerable benchmark target.</div>
+              <div className="text-[11px] text-slate-400">Starts the separately configured Juice Shop lab. Requires JUICE_SHOP_URL on the server.</div>
             </div>
             <button
               type="button"
               onClick={handleQuickJuiceShop}
+              disabled={isSubmitting}
               className="px-3 py-1.5 text-xs font-medium text-cyan-300 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-800 rounded-lg transition-colors"
             >
-              Load Lab Preset
+              {isSubmitting ? 'Starting…' : 'Start Lab Scan'}
             </button>
           </div>
 
@@ -235,7 +251,7 @@ export const TargetScopeManager: React.FC<TargetScopeManagerProps> = ({
           {/* Scan Profile */}
           <div className="space-y-1.5">
             <label className="font-semibold text-slate-300">Testing Profile</label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setScanProfile('passive_only')}
@@ -258,17 +274,7 @@ export const TargetScopeManager: React.FC<TargetScopeManagerProps> = ({
               >
                 Standard Active
               </button>
-              <button
-                type="button"
-                onClick={() => setScanProfile('authenticated_lab')}
-                className={`p-2 rounded-lg border text-center transition-all ${
-                  scanProfile === 'authenticated_lab'
-                    ? 'bg-slate-800 border-cyan-500 text-cyan-300 font-semibold'
-                    : 'bg-slate-900/60 border-slate-800 text-slate-400'
-                }`}
-              >
-                Authenticated Lab
-              </button>
+
             </div>
           </div>
 
