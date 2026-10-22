@@ -343,7 +343,9 @@ apiRouter.get('/scans/:id/metrics', (req, res) => {
     try {
       const configured = new URL(configuredLabUrl);
       const scanned = new URL(target.target_url);
-      return configured.origin === scanned.origin && configured.hostname === scanned.hostname;
+      const configuredPath = configured.pathname.replace(/\\/$/, '');
+      const scannedPath = scanned.pathname.replace(/\\/$/, '');
+      return configured.origin === scanned.origin && configuredPath === scannedPath;
     } catch {
       return false;
     }
@@ -416,8 +418,17 @@ apiRouter.post('/lab/seed', (req, res) => {
     return;
   }
 
-  // Check if Juice Shop target already exists
-  const existing = db.getTargets().find((t) => t.name.includes('Juice Shop'));
+  // Reuse only the target that matches the configured host, scheme, port, and base path.
+  const existing = db.getTargets().find((target) => {
+    if (target.mode !== 'lab') return false;
+    try {
+      const savedUrl = new URL(target.target_url);
+      return savedUrl.origin === labUrl.origin &&
+        savedUrl.pathname.replace(/\\/$/, '') === labUrl.pathname.replace(/\\/$/, '');
+    } catch {
+      return false;
+    }
+  });
   if (existing) {
     res.json({ message: 'Lab target already exists', target: existing });
     return;
