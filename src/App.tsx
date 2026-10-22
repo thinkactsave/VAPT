@@ -44,6 +44,9 @@ export default function App() {
   }, [apiToken]);
 
   useEffect(() => {
+    // Preserve the last authentication error after clearing a rejected token.
+    // A new request is triggered when the user submits a replacement token.
+    if (!apiToken && authState === 'required') return;
     let cancelled = false;
     setAuthState('checking');
     const headers = new Headers();
