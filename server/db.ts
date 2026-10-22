@@ -14,7 +14,7 @@ import {
   ProxyAccessLog,
 } from '../src/types/proofvapt.js';
 
-const DATA_DIR = path.resolve(process.cwd(), '.data');
+const DATA_DIR = path.resolve(process.env.PROOFVAPT_DATA_DIR || path.join(process.cwd(), '.data'));
 const ARTIFACTS_DIR = path.resolve(DATA_DIR, 'artifacts');
 const DB_FILE = path.resolve(DATA_DIR, 'db.json');
 
