@@ -289,31 +289,31 @@ export default function App() {
   };
 
   const handleSeedLab = async () => {
-    try {
-      const res = await apiFetch('/api/lab/seed', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.target) {
-          // Launch scan against seeded target
-          const scanRes = await fetch('/api/scans', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              target_id: data.target.id,
-              scan_profile: 'standard_active'
-            })
-          });
-          if (scanRes.ok) {
-            const scan = await scanRes.json();
-            setCurrentScan(scan);
-            fetchScans();
-            setActiveTab('pipeline');
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Failed to seed lab:', err);
+    const res = await apiFetch('/api/lab/seed', { method: 'POST' });
+    const labData = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(labData.error || 'Could not configure the Juice Shop lab.');
     }
+    if (!labData.target?.id) {
+      throw new Error('The lab endpoint did not return a target profile.');
+    }
+
+    const scanRes = await apiFetch('/api/scans', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target_id: labData.target.id,
+        scan_profile: 'standard_active'
+      })
+    });
+    const scanData = await scanRes.json().catch(() => ({}));
+    if (!scanRes.ok) {
+      throw new Error(scanData.error || 'Could not start the lab assessment.');
+    }
+
+    setCurrentScan(scanData);
+    await fetchScans();
+    setActiveTab('pipeline');
   };
 
   if (authState !== 'ready') {
