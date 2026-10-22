@@ -113,8 +113,8 @@ export class BenchmarkEvaluationEngine {
     rawAlertsCount: number = 0,
     scanDurationSeconds: number = 0,
     totalRequestsCount: number = 0,
-    baselineTimeSeconds: number = 60,
-    baselineRequestsCount: number = 850
+    baselineTimeSeconds: number = 0,
+    baselineRequestsCount: number = 0
   ): ResearchMetrics {
     let tp = 0;
     let fp = 0;
@@ -150,22 +150,20 @@ export class BenchmarkEvaluationEngine {
     const recall = tp + fn > 0 ? Number((tp / (tp + fn)).toFixed(4)) : 'Undefined';
     const fpr = fp + tn > 0 ? Number((fp / (fp + tn)).toFixed(4)) : 'Undefined';
 
-    const baselineFp = Math.max(fp + 2, 1);
-    const fpReduction = baselineFp > 0
-      ? Number((((baselineFp - fp) / baselineFp) * 100).toFixed(2))
-      : 'Undefined';
-
-    const totalRaw = Math.max(rawAlertsCount, findings.length + 3);
+    // Comparative claims require measured baseline data. Do not invent a
+    // baseline or pad the raw-alert count to make results look better.
+    const fpReduction = 'Undefined';
+    const totalRaw = Math.max(0, rawAlertsCount);
     const totalUnified = findings.length;
     const dupReduction = totalRaw > 0
       ? Number((((totalRaw - totalUnified) / totalRaw) * 100).toFixed(2))
       : 'Undefined';
 
-    const timeOverhead = baselineTimeSeconds > 0
+    const timeOverhead = baselineTimeSeconds > 0 && scanDurationSeconds >= 0
       ? Number((((scanDurationSeconds - baselineTimeSeconds) / baselineTimeSeconds) * 100).toFixed(2))
       : 'Undefined';
 
-    const reqOverhead = baselineRequestsCount > 0
+    const reqOverhead = baselineRequestsCount > 0 && totalRequestsCount >= 0
       ? Number((((totalRequestsCount - baselineRequestsCount) / baselineRequestsCount) * 100).toFixed(2))
       : 'Undefined';
 
@@ -177,7 +175,7 @@ export class BenchmarkEvaluationEngine {
       duplicate_reduction: dupReduction,
       time_overhead_pct: timeOverhead,
       request_overhead_pct: reqOverhead,
-      verification_accuracy: 0.94,
+      verification_accuracy: 'Undefined',
       tp_count: tp,
       fp_count: fp,
       fn_count: fn,
