@@ -3,9 +3,9 @@
 @layer base {
   :root {
     color-scheme: dark;
-    --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
-    --font-body: 'DM Sans', system-ui, sans-serif;
-    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --font-display: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     --canvas: #0b0e12;
     --surface: #11161c;
     --surface-raised: #171e26;
@@ -54,12 +54,7 @@
 ::-webkit-scrollbar-thumb:hover { background: #4b5966; }
 
 .proofvapt-shell {
-  background:
-    linear-gradient(90deg, rgb(255 255 255 / 1.5%) 1px, transparent 1px),
-    linear-gradient(rgb(255 255 255 / 1.5%) 1px, transparent 1px),
-    var(--canvas);
-  background-size: 36px 36px;
-  background-position: -1px -1px;
+  background: var(--canvas);
 }
 .proofvapt-shell main { background: var(--canvas); }
 .proofvapt-shell aside { background: #0d1116; border-color: var(--line); }
@@ -122,4 +117,13 @@
   .print-only { display:block !important; }
   .print-page-break { page-break-before:always; }
   .proofvapt-shell { background:#fff !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
