@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ScopeEnforcingEgressProxy } from '../server/egressProxy.js';
 import { BenchmarkEvaluationEngine } from '../server/benchmarks.js';
+import { TargetProfile } from '../src/types/proofvapt.js';
 
 test('always blocks the cloud metadata link-local address, including lab mode', () => {
   assert.equal(ScopeEnforcingEgressProxy.isRestrictedIP('169.254.169.254', true).restricted, true);
@@ -29,4 +30,27 @@ test('does not manufacture research baselines or accuracy numbers', () => {
   assert.equal(metrics.verification_accuracy, 'Undefined');
   assert.equal(metrics.total_requests, 0);
   assert.equal(metrics.duration_seconds, 0);
+});
+
+test('fails closed for a foreign host or a port outside scope, even in lab mode', async () => {
+  const target: TargetProfile = {
+    id: 'target-policy-test',
+    name: 'Test lab target',
+    mode: 'lab',
+    target_url: 'http://juice-shop:3000/',
+    hostname: 'juice-shop',
+    allowed_ports: [3000],
+    excluded_paths: ['/logout'],
+    rate_limit_rps: 5,
+    max_request_budget: 25,
+    timeout_ms: 3000,
+    is_isolated_lab_network_confirmed: true,
+    active_scan_scope_confirmed: true,
+    created_at: new Date(0).toISOString()
+  };
+  const proxy = new ScopeEnforcingEgressProxy({ scanId: 'policy-test', target });
+  const foreignHost = await proxy.validateDestination('example.com', 3000);
+  const foreignPort = await proxy.validateDestination('juice-shop', 443);
+  assert.equal(foreignHost.allowed, false);
+  assert.equal(foreignPort.allowed, false);
 });
