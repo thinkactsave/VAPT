@@ -53,10 +53,10 @@ export const ReportView: React.FC<ReportViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Action Header Bar (Hidden in Print) */}
-      <div className="no-print bg-[#111827] border border-[#1F2937] rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="no-print bg-[#141a21] border border-[#2a333d] rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold text-cyan-400 uppercase tracking-wider font-mono">
+            <span className="text-xs font-semibold text-[#83cfc0] uppercase tracking-wider font-mono">
               Audit Report Generator
             </span>
             <span className="text-slate-600">·</span>
@@ -80,7 +80,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
           </button>
           <button
             onClick={handlePrint}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg transition-colors shadow-sm shadow-cyan-950 font-mono"
+            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-[#0a1714] bg-[#83cfc0] hover:bg-[#a1e2d5] rounded-lg transition-colors shadow-sm shadow-cyan-950 font-mono"
           >
             <Printer className="w-3.5 h-3.5" />
             <span>Print / Save as PDF</span>
@@ -89,12 +89,12 @@ export const ReportView: React.FC<ReportViewProps> = ({
       </div>
 
       {/* Formal Printable Document Body */}
-      <div className="bg-[#111827] print:bg-white border border-[#1F2937] print:border-none rounded-xl p-8 print:p-0 space-y-8 print:text-black">
+      <div className="bg-[#141a21] print:bg-white border border-[#2a333d] print:border-none rounded-xl p-8 print:p-0 space-y-8 print:text-black">
         {/* Document Title Header */}
-        <div className="border-b border-slate-800 print:border-slate-300 pb-6">
+        <div className="border-b border-[#2a333d] print:border-slate-300 pb-6">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-xs font-mono font-semibold text-cyan-400 print:text-slate-600 uppercase tracking-wider">
+              <div className="text-xs font-mono font-semibold text-[#83cfc0] print:text-slate-600 uppercase tracking-wider">
                 MSc Cyber Security Assessment Platform
               </div>
               <h1 className="text-2xl font-bold text-white print:text-slate-900 tracking-tight mt-1">
@@ -115,7 +115,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
 
         {/* Section 1: Executive Summary */}
         <div className="space-y-3">
-          <h2 className="text-sm font-bold text-white print:text-slate-900 uppercase font-mono tracking-wider border-b border-slate-800 print:border-slate-300 pb-1">
+          <h2 className="text-sm font-bold text-white print:text-slate-900 uppercase font-mono tracking-wider border-b border-[#2a333d] print:border-slate-300 pb-1">
             01. Executive Summary & Risk Posture
           </h2>
           <p className="text-xs text-slate-300 print:text-slate-700 leading-relaxed">
@@ -125,19 +125,19 @@ export const ReportView: React.FC<ReportViewProps> = ({
           </p>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 font-mono">
-            <div className="p-3 bg-slate-900/60 print:bg-slate-100 rounded-lg border border-slate-800 print:border-slate-300">
+            <div className="p-3 bg-[#11171e] print:bg-slate-100 rounded-lg border border-[#2a333d] print:border-slate-300">
               <span className="text-[10px] text-rose-400 print:text-rose-700 block uppercase font-bold">Critical Risk</span>
               <span className="text-xl font-bold text-white print:text-slate-900 tabular-nums">{criticalCount}</span>
             </div>
-            <div className="p-3 bg-slate-900/60 print:bg-slate-100 rounded-lg border border-slate-800 print:border-slate-300">
+            <div className="p-3 bg-[#11171e] print:bg-slate-100 rounded-lg border border-[#2a333d] print:border-slate-300">
               <span className="text-[10px] text-amber-400 print:text-amber-700 block uppercase font-bold">High Risk</span>
               <span className="text-xl font-bold text-white print:text-slate-900 tabular-nums">{highCount}</span>
             </div>
-            <div className="p-3 bg-slate-900/60 print:bg-slate-100 rounded-lg border border-slate-800 print:border-slate-300">
+            <div className="p-3 bg-[#11171e] print:bg-slate-100 rounded-lg border border-[#2a333d] print:border-slate-300">
               <span className="text-[10px] text-yellow-400 print:text-yellow-700 block uppercase font-bold">Medium Risk</span>
               <span className="text-xl font-bold text-white print:text-slate-900 tabular-nums">{mediumCount}</span>
             </div>
-            <div className="p-3 bg-slate-900/60 print:bg-slate-100 rounded-lg border border-slate-800 print:border-slate-300">
+            <div className="p-3 bg-[#11171e] print:bg-slate-100 rounded-lg border border-[#2a333d] print:border-slate-300">
               <span className="text-[10px] text-sky-400 print:text-sky-700 block uppercase font-bold">Low / Info</span>
               <span className="text-xl font-bold text-white print:text-slate-900 tabular-nums">{lowCount}</span>
             </div>
@@ -146,7 +146,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
 
         {/* Section 2: Scope & Execution Parameters */}
         <div className="space-y-3">
-          <h2 className="text-sm font-bold text-white print:text-slate-900 uppercase font-mono tracking-wider border-b border-slate-800 print:border-slate-300 pb-1">
+          <h2 className="text-sm font-bold text-white print:text-slate-900 uppercase font-mono tracking-wider border-b border-[#2a333d] print:border-slate-300 pb-1">
             02. Assessment Scope & Safety Boundaries
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono">
@@ -165,7 +165,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
 
         {/* Section 3: OWASP Top 10:2025 Coverage */}
         <div className="space-y-3">
-          <h2 className="text-sm font-bold text-white print:text-slate-900 uppercase font-mono tracking-wider border-b border-slate-800 print:border-slate-300 pb-1">
+          <h2 className="text-sm font-bold text-white print:text-slate-900 uppercase font-mono tracking-wider border-b border-[#2a333d] print:border-slate-300 pb-1">
             03. OWASP Top 10:2025 Coverage Mapping
           </h2>
           <p className="text-xs text-slate-400 print:text-slate-600">
@@ -176,10 +176,10 @@ export const ReportView: React.FC<ReportViewProps> = ({
             {coverage.map((c) => (
               <div
                 key={c.category_code}
-                className="p-2.5 bg-slate-900/60 print:bg-slate-50 border border-slate-800 print:border-slate-200 rounded flex items-center justify-between"
+                className="p-2.5 bg-[#11171e] print:bg-slate-50 border border-[#2a333d] print:border-slate-200 rounded flex items-center justify-between"
               >
                 <div>
-                  <span className="font-bold text-cyan-400 print:text-slate-800 mr-2">{c.category_code}</span>
+                  <span className="font-bold text-[#83cfc0] print:text-slate-800 mr-2">{c.category_code}</span>
                   <span className="text-slate-300 print:text-slate-700">{c.category_title.split('- ')[1] || c.category_title}</span>
                 </div>
                 <span
@@ -187,7 +187,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
                     c.status === 'tested'
                       ? 'text-emerald-400 bg-emerald-950/60 print:bg-emerald-100 print:text-emerald-800'
                       : c.status === 'partially_tested'
-                      ? 'text-cyan-400 bg-cyan-950/60 print:bg-cyan-100 print:text-cyan-800'
+                      ? 'text-[#83cfc0] bg-[#142620] print:bg-cyan-100 print:text-cyan-800'
                       : 'text-amber-400 bg-amber-950/60 print:bg-amber-100 print:text-amber-800'
                   }`}
                 >
@@ -200,7 +200,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
 
         {/* Section 4: Detailed Technical Findings Log */}
         <div className="space-y-4 print-page-break">
-          <h2 className="text-sm font-bold text-white print:text-slate-900 uppercase font-mono tracking-wider border-b border-slate-800 print:border-slate-300 pb-1">
+          <h2 className="text-sm font-bold text-white print:text-slate-900 uppercase font-mono tracking-wider border-b border-[#2a333d] print:border-slate-300 pb-1">
             04. Detailed Vulnerability Findings & Technical Proof
           </h2>
 
@@ -208,7 +208,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
             findings.map((f, idx) => (
               <div
                 key={f.id}
-                className="p-4 bg-slate-900/60 print:bg-white border border-slate-800 print:border-slate-300 rounded-lg space-y-3 text-xs"
+                className="p-4 bg-[#11171e] print:bg-white border border-[#2a333d] print:border-slate-300 rounded-lg space-y-3 text-xs"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -225,7 +225,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
                       >
                         {f.source_severity}
                       </span>
-                      <span className="font-mono text-cyan-400 print:text-slate-700 font-semibold">{f.owasp_category_code}</span>
+                      <span className="font-mono text-[#83cfc0] print:text-slate-700 font-semibold">{f.owasp_category_code}</span>
                       <span className="font-mono text-slate-400">{f.cwe_id}</span>
                     </div>
                     <h3 className="text-sm font-bold text-white print:text-slate-900">
@@ -237,16 +237,16 @@ export const ReportView: React.FC<ReportViewProps> = ({
                   </div>
 
                   <div className="text-right font-mono text-[11px] text-slate-400 shrink-0">
-                    <div>CVSS: {f.official_cvss_score || 'N/A'}</div>
-                    <div className="text-cyan-400 print:text-slate-800">Priority: {f.contextual_remediation_priority.toFixed(1)}/10</div>
+                    <div>CVSS: {f.official_cvss_score != null ? f.official_cvss_score.toFixed(1) : 'Not scored'}</div>
+                    <div className="text-[#83cfc0] print:text-slate-800">Priority: {f.contextual_remediation_priority.toFixed(1)}/10</div>
                   </div>
                 </div>
 
                 {/* Evidence Snippet */}
                 {f.evidence?.[0] && (
-                  <div className="border border-slate-800 print:border-slate-200 rounded p-2.5 bg-[#080C14] print:bg-slate-50 text-[11px] font-mono overflow-x-auto space-y-1">
+                  <div className="border border-[#2a333d] print:border-slate-200 rounded p-2.5 bg-[#0c1015] print:bg-slate-50 text-[11px] font-mono overflow-x-auto space-y-1">
                     <div className="text-slate-500 print:text-slate-600 text-[10px] uppercase">Redacted Request Evidence:</div>
-                    <div className="text-cyan-300 print:text-slate-800 truncate">{f.evidence[0].request_headers}</div>
+                    <div className="text-[#a1e2d5] print:text-slate-800 truncate">{f.evidence[0].request_headers}</div>
                     <div className="text-slate-500 print:text-slate-600 text-[10px] uppercase pt-1">Response Evidence:</div>
                     <div className="text-slate-300 print:text-slate-700 truncate">{f.evidence[0].response_body_snippet}</div>
                   </div>
@@ -265,7 +265,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
         </div>
 
         {/* Section 5: Academic Research Limitations */}
-        <div className="border-t border-slate-800 print:border-slate-300 pt-6 space-y-2 text-xs text-slate-400 print:text-slate-600">
+        <div className="border-t border-[#2a333d] print:border-slate-300 pt-6 space-y-2 text-xs text-slate-400 print:text-slate-600">
           <div className="font-bold text-white print:text-slate-900 uppercase font-mono">
             05. Academic Methodology & Research Prototype Limitations
           </div>

@@ -18,10 +18,10 @@ export const TopBar: React.FC<TopBarProps> = ({
   toolStatus
 }) => {
   return (
-    <header className="flex items-center justify-between gap-8 px-6 py-3.5 bg-[#0B0F17] border-b border-[#1F2937] shrink-0 sticky top-0 z-30">
+    <header className="flex items-center justify-between gap-8 px-6 py-3.5 bg-[#0d1116] border-b border-[#2a333d] shrink-0 sticky top-0 z-30">
       {/* Zone 1: Single text element wordmark */}
       <div className="flex items-center gap-3 whitespace-nowrap shrink-0">
-        <div className="w-8 h-8 rounded-lg bg-cyan-950/70 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+        <div className="w-8 h-8 rounded-lg bg-cyan-950/70 border border-[#4e9385]/30 flex items-center justify-center text-[#83cfc0]">
           <ShieldCheck className="w-5 h-5" />
         </div>
         <div className="flex items-baseline gap-2">
@@ -39,7 +39,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           onClick={() => onSelectTab('overview')}
           className={`transition-colors whitespace-nowrap shrink-0 hover:text-white ${
-            activeTab === 'overview' ? 'text-cyan-400' : ''
+            activeTab === 'overview' ? 'text-[#83cfc0]' : ''
           }`}
         >
           Overview
@@ -47,7 +47,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           onClick={() => onSelectTab('pipeline')}
           className={`transition-colors whitespace-nowrap shrink-0 hover:text-white ${
-            activeTab === 'pipeline' ? 'text-cyan-400' : ''
+            activeTab === 'pipeline' ? 'text-[#83cfc0]' : ''
           }`}
         >
           Pipeline
@@ -55,7 +55,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           onClick={() => onSelectTab('surface')}
           className={`transition-colors whitespace-nowrap shrink-0 hover:text-white ${
-            activeTab === 'surface' ? 'text-cyan-400' : ''
+            activeTab === 'surface' ? 'text-[#83cfc0]' : ''
           }`}
         >
           Attack Surface
@@ -63,7 +63,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           onClick={() => onSelectTab('findings')}
           className={`transition-colors whitespace-nowrap shrink-0 hover:text-white ${
-            activeTab === 'findings' ? 'text-cyan-400' : ''
+            activeTab === 'findings' ? 'text-[#83cfc0]' : ''
           }`}
         >
           Findings & Verification
@@ -71,7 +71,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           onClick={() => onSelectTab('owasp')}
           className={`transition-colors whitespace-nowrap shrink-0 hover:text-white ${
-            activeTab === 'owasp' ? 'text-cyan-400' : ''
+            activeTab === 'owasp' ? 'text-[#83cfc0]' : ''
           }`}
         >
           OWASP 2025 Matrix
@@ -79,7 +79,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           onClick={() => onSelectTab('benchmarks')}
           className={`transition-colors whitespace-nowrap shrink-0 hover:text-white ${
-            activeTab === 'benchmarks' ? 'text-cyan-400' : ''
+            activeTab === 'benchmarks' ? 'text-[#83cfc0]' : ''
           }`}
         >
           Research Benchmarks
@@ -89,9 +89,9 @@ export const TopBar: React.FC<TopBarProps> = ({
       {/* Zone 3: 1 primary action button */}
       <div className="flex items-center gap-3 shrink-0">
         {toolStatus && (
-          <div className="hidden xl:flex items-center gap-2 text-xs text-slate-400 bg-slate-900/60 border border-slate-800 rounded-md px-2.5 py-1 font-mono">
+          <div className="hidden xl:flex items-center gap-2 text-xs text-slate-400 bg-[#11171e] border border-[#2a333d] rounded-md px-2.5 py-1 font-mono">
             <span className="flex items-center gap-1 text-slate-300">
-              <Terminal className="w-3 h-3 text-cyan-400" />
+              <Terminal className="w-3 h-3 text-[#83cfc0]" />
               ffuf v{toolStatus.ffuf.version.split(' ')[0]}
             </span>
             <span className="text-slate-600">·</span>
@@ -100,7 +100,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         )}
         <button
           onClick={onOpenTargetModal}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-slate-950 bg-cyan-400 rounded-lg hover:bg-cyan-300 transition-colors whitespace-nowrap shrink-0 shadow-sm shadow-cyan-950"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0a1714] bg-[#83cfc0] rounded-lg hover:bg-[#a1e2d5] transition-colors whitespace-nowrap shrink-0 shadow-sm shadow-cyan-950"
         >
           <Plus className="w-3.5 h-3.5" />
           <span>New Assessment</span>

@@ -28,13 +28,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   findingsCount
 }) => {
   const navItems = [
-    { id: 'overview', label: 'SOC Overview', icon: LayoutDashboard },
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     {
       id: 'pipeline',
-      label: '7-Stage Pipeline',
+      label: 'Scan activity',
       icon: Cpu,
       badge: activeScan?.status === 'running' ? 'Active' : undefined,
-      badgeColor: 'text-cyan-400 bg-cyan-950/60'
+      badgeColor: 'text-[#83cfc0] bg-[#142620]'
     },
     {
       id: 'surface',
@@ -51,13 +51,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     { id: 'owasp', label: 'OWASP 2025 Matrix', icon: Grid },
     { id: 'benchmarks', label: 'Research Benchmarks', icon: FlaskConical },
-    { id: 'report', label: 'Executive & Tech PDF', icon: FileText }
+    { id: 'report', label: 'Report', icon: FileText }
   ];
 
   return (
-    <aside className="w-64 bg-[#0B0F17] border-r border-[#1F2937] flex flex-col shrink-0 min-h-[calc(100vh-57px)]">
+    <aside className="w-64 bg-[#0d1116] border-r border-[#2a333d] flex flex-col shrink-0 min-h-[calc(100vh-57px)]">
       {/* Target Scope Card in Sidebar */}
-      <div className="p-4 border-b border-[#1F2937]">
+      <div className="p-4 border-b border-[#2a333d]">
         <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
           Authorized Scope Target
         </div>
@@ -66,7 +66,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="text-xs font-semibold text-white truncate" title={activeScan.target.target_url}>
               {activeScan.target.name}
             </div>
-            <div className="text-[11px] font-mono text-cyan-400 truncate">
+            <div className="text-[11px] font-mono text-[#83cfc0] truncate">
               {activeScan.target.target_url}
             </div>
             <div className="flex items-center gap-2 text-[10px] text-slate-400 pt-1">
@@ -93,12 +93,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={() => onSelectTab(item.id)}
               className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-lg transition-colors text-left ${
                 isActive
-                  ? 'bg-slate-800/80 text-cyan-300 font-semibold'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+                  ? 'bg-[#202932] text-[#a1e2d5] font-semibold'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-[#11171e]'
               }`}
             >
               <div className="flex items-center gap-2.5 truncate">
-                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-cyan-400' : 'text-slate-500'}`} />
+                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#83cfc0]' : 'text-slate-500'}`} />
                 <span className="truncate">{item.label}</span>
               </div>
               {item.badge && (
@@ -116,14 +116,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {/* System Status Footnote */}
-      <div className="p-3 border-t border-[#1F2937] text-[11px] text-slate-500 space-y-1 font-mono">
+      <div className="p-3 border-t border-[#2a333d] text-[11px] text-slate-500 space-y-1 font-mono">
         <div className="flex items-center justify-between">
           <span>Egress Proxy</span>
-          <span className="text-emerald-400">Enforcing (Anti-SSRF)</span>
+          <span className={activeScan?.status === 'running' ? 'text-emerald-400' : 'text-slate-500'}>
+            {activeScan?.status === 'running' ? 'Active for scan' : 'Starts with scan'}
+          </span>
         </div>
         <div className="flex items-center justify-between">
           <span>Worker Supervisor</span>
-          <span className="text-cyan-400">Node ChildProcess</span>
+          <span className="text-slate-500">Node workers</span>
         </div>
       </div>
     </aside>

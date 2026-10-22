@@ -22,7 +22,7 @@ interface DashboardOverviewProps {
   onStartNewScan: () => void;
   onSelectScan: (scanId: string) => void;
   onNavigateTab: (tab: string) => void;
-  onSeedLab: () => void;
+  onSeedLab: () => Promise<void>;
 }
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
@@ -40,6 +40,19 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const mediumCount = findings.filter((f) => f.source_severity === 'MEDIUM').length;
   const lowCount = findings.filter((f) => f.source_severity === 'LOW').length;
   const verifiedCount = findings.filter((f) => f.verification_status === 'verified').length;
+  const [isStartingLab, setIsStartingLab] = React.useState(false);
+  const [labError, setLabError] = React.useState<string | null>(null);
+  const startLab = async () => {
+    setIsStartingLab(true);
+    setLabError(null);
+    try {
+      await onSeedLab();
+    } catch (error) {
+      setLabError(error instanceof Error ? error.message : 'Could not start the lab assessment.');
+    } finally {
+      setIsStartingLab(false);
+    }
+  };
 
   const target = currentScan?.target;
   const wireRequests = currentScan?.observed_request_count || 0;
@@ -49,10 +62,15 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Banner / Assessment Status */}
-      <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      {labError && (
+        <div role="alert" className="rounded-lg border border-amber-900/60 bg-amber-950/20 px-4 py-3 text-xs text-amber-200">
+          {labError}
+        </div>
+      )}
+      <div className="bg-[#141a21] border border-[#2a333d] rounded-xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold text-cyan-400 uppercase tracking-wider font-mono">
+            <span className="text-xs font-semibold text-[#83cfc0] uppercase tracking-wider font-mono">
               Active Assessment Engine
             </span>
             <span className="text-slate-600">·</span>
@@ -62,21 +80,22 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             {target ? target.name : 'ProofVAPT Security Assessment Console'}
           </h1>
           <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-            Automated multi-stage vulnerability discovery using real <code className="text-cyan-300 font-mono">ffuf</code> content fuzzing,{' '}
-            <code className="text-cyan-300 font-mono">OWASP ZAP AF</code> crawler & scanner, and dynamic Scope-Enforcing Egress Proxy protection.
+            Automated multi-stage vulnerability discovery using real <code className="text-[#a1e2d5] font-mono">ffuf</code> content fuzzing,{' '}
+            <code className="text-[#a1e2d5] font-mono">OWASP ZAP AF</code> crawler & scanner, and dynamic Scope-Enforcing Egress Proxy protection.
           </p>
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
           <button
-            onClick={onSeedLab}
-            className="px-3.5 py-2 text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 rounded-lg transition-colors whitespace-nowrap"
+            onClick={startLab}
+            disabled={isStartingLab}
+            className="px-3.5 py-2 text-xs font-medium text-slate-300 bg-[#202932] hover:bg-slate-700/80 border border-slate-700 rounded-lg transition-colors whitespace-nowrap"
           >
-            Load Juice Shop Lab
+            {isStartingLab ? 'Starting lab…' : 'Start Juice Shop scan'}
           </button>
           <button
             onClick={onStartNewScan}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg transition-colors whitespace-nowrap shadow-sm shadow-cyan-950"
+            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-[#0a1714] bg-[#83cfc0] hover:bg-[#a1e2d5] rounded-lg transition-colors whitespace-nowrap shadow-sm shadow-cyan-950"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
             <span>Launch Assessment</span>
@@ -87,10 +106,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       {/* KPI Stats Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* KPI 1: Attack Surface */}
-        <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4">
+        <div className="bg-[#141a21] border border-[#2a333d] rounded-xl p-4">
           <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
             <span>Discovered Endpoints</span>
-            <Globe className="w-4 h-4 text-cyan-400" />
+            <Globe className="w-4 h-4 text-[#83cfc0]" />
           </div>
           <div className="text-2xl font-bold text-white font-mono tabular-nums">
             {endpoints.length}
@@ -101,7 +120,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         </div>
 
         {/* KPI 2: Correlated Findings */}
-        <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4">
+        <div className="bg-[#141a21] border border-[#2a333d] rounded-xl p-4">
           <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
             <span>Unified Findings</span>
             <Bug className="w-4 h-4 text-amber-400" />
@@ -119,7 +138,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         </div>
 
         {/* KPI 3: Verified Flaws */}
-        <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4">
+        <div className="bg-[#141a21] border border-[#2a333d] rounded-xl p-4">
           <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
             <span>Verification Rate</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -133,7 +152,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         </div>
 
         {/* KPI 4: Proxy Wire Traffic */}
-        <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4">
+        <div className="bg-[#141a21] border border-[#2a333d] rounded-xl p-4">
           <div className="flex items-center justify-between text-slate-400 text-xs mb-2">
             <span>Observed Wire Requests</span>
             <Activity className="w-4 h-4 text-indigo-400" />
@@ -144,7 +163,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           <div className="mt-1.5 w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
             <div
               className={`h-full transition-all duration-300 ${
-                budgetPct > 80 ? 'bg-rose-500' : 'bg-cyan-400'
+                budgetPct > 80 ? 'bg-rose-500' : 'bg-[#83cfc0]'
               }`}
               style={{ width: `${budgetPct}%` }}
             />
@@ -159,15 +178,15 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       {/* Main Grid: Pipeline Progress + Severities */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Current Scan Progress */}
-        <div className="lg:col-span-2 bg-[#111827] border border-[#1F2937] rounded-xl p-5 space-y-4">
+        <div className="lg:col-span-2 bg-[#141a21] border border-[#2a333d] rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
-              <Activity className="w-4 h-4 text-cyan-400" />
+              <Activity className="w-4 h-4 text-[#83cfc0]" />
               <span>Assessment Pipeline State</span>
             </h2>
             <button
               onClick={() => onNavigateTab('pipeline')}
-              className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-medium"
+              className="text-xs text-[#83cfc0] hover:text-[#a1e2d5] flex items-center gap-1 font-medium"
             >
               <span>View Live Logs</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -176,12 +195,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
           {currentScan ? (
             <div className="space-y-4">
-              <div className="p-3 bg-slate-900/70 border border-slate-800 rounded-lg flex items-center justify-between">
+              <div className="p-3 bg-slate-900/70 border border-[#2a333d] rounded-lg flex items-center justify-between">
                 <div>
                   <div className="text-xs font-semibold text-white">
                     Target: {currentScan.target?.name}
                   </div>
-                  <div className="text-[11px] font-mono text-cyan-400">
+                  <div className="text-[11px] font-mono text-[#83cfc0]">
                     {currentScan.target?.target_url}
                   </div>
                 </div>
@@ -189,7 +208,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   <span
                     className={`text-xs px-2.5 py-1 rounded-md font-mono font-medium uppercase ${
                       currentScan.status === 'running'
-                        ? 'text-cyan-400 bg-cyan-950/70 border border-cyan-800'
+                        ? 'text-[#83cfc0] bg-cyan-950/70 border border-[#2b4e48]'
                         : currentScan.status === 'completed'
                         ? 'text-emerald-400 bg-emerald-950/70 border border-emerald-800'
                         : 'text-amber-400 bg-amber-950/70 border border-amber-800'
@@ -209,8 +228,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                       p.status === 'completed'
                         ? 'bg-emerald-950/20 border-emerald-900/60 text-emerald-300'
                         : p.status === 'running'
-                        ? 'bg-cyan-950/30 border-cyan-800 text-cyan-300'
-                        : 'bg-slate-900/40 border-slate-800/80 text-slate-500'
+                        ? 'bg-cyan-950/30 border-[#2b4e48] text-[#a1e2d5]'
+                        : 'bg-slate-900/40 border-[#2a333d]/80 text-slate-500'
                     }`}
                   >
                     <div className="text-[10px] uppercase font-mono tracking-wider truncate mb-1">
@@ -231,7 +250,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         </div>
 
         {/* Right Column: Severity Breakdown & Fast Navigation */}
-        <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-5 space-y-4">
+        <div className="bg-[#141a21] border border-[#2a333d] rounded-xl p-5 space-y-4">
           <h2 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
             <Flame className="w-4 h-4 text-rose-400" />
             <span>Finding Severity Distribution</span>
@@ -283,17 +302,17 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </div>
           </div>
 
-          <div className="pt-3 border-t border-slate-800 flex flex-col gap-2">
+          <div className="pt-3 border-t border-[#2a333d] flex flex-col gap-2">
             <button
               onClick={() => onNavigateTab('findings')}
-              className="w-full py-2 px-3 text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700/80 rounded-lg transition-colors flex items-center justify-between"
+              className="w-full py-2 px-3 text-xs font-medium text-slate-300 bg-[#202932] hover:bg-slate-700/80 rounded-lg transition-colors flex items-center justify-between"
             >
               <span>Explore All {findings.length} Findings</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => onNavigateTab('owasp')}
-              className="w-full py-2 px-3 text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700/80 rounded-lg transition-colors flex items-center justify-between"
+              className="w-full py-2 px-3 text-xs font-medium text-slate-300 bg-[#202932] hover:bg-slate-700/80 rounded-lg transition-colors flex items-center justify-between"
             >
               <span>OWASP Top 10:2025 Matrix</span>
               <ArrowRight className="w-3.5 h-3.5" />

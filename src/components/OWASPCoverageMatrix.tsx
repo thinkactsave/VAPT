@@ -33,10 +33,10 @@ export const OWASPCoverageMatrix: React.FC<OWASPCoverageMatrixProps> = ({
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="bg-[#141a21] border border-[#2a333d] rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold text-cyan-400 uppercase tracking-wider font-mono">
+            <span className="text-xs font-semibold text-[#83cfc0] uppercase tracking-wider font-mono">
               OWASP Top 10:2025 Registry
             </span>
             <span className="text-slate-600">·</span>
@@ -55,7 +55,7 @@ export const OWASPCoverageMatrix: React.FC<OWASPCoverageMatrixProps> = ({
           <span className="px-2.5 py-1 rounded-md bg-emerald-950/60 text-emerald-400 border border-emerald-800/40">
             {testedCount} Tested
           </span>
-          <span className="px-2.5 py-1 rounded-md bg-cyan-950/60 text-cyan-400 border border-cyan-800/40">
+          <span className="px-2.5 py-1 rounded-md bg-[#142620] text-[#83cfc0] border border-[#2b4e48]/40">
             {partialCount} Partial
           </span>
           <span className="px-2.5 py-1 rounded-md bg-amber-950/60 text-amber-400 border border-amber-800/40">
@@ -74,14 +74,14 @@ export const OWASPCoverageMatrix: React.FC<OWASPCoverageMatrixProps> = ({
           return (
             <div
               key={cat.category_code}
-              className={`bg-[#111827] border rounded-xl overflow-hidden transition-all ${
+              className={`bg-[#141a21] border rounded-xl overflow-hidden transition-all ${
                 cat.status === 'tested'
                   ? 'border-emerald-900/50'
                   : cat.status === 'partially_tested'
                   ? 'border-cyan-900/50'
                   : cat.status === 'manual_review_required'
                   ? 'border-amber-900/50'
-                  : 'border-slate-800'
+                  : 'border-[#2a333d]'
               }`}
             >
               {/* Card Header */}
@@ -91,7 +91,7 @@ export const OWASPCoverageMatrix: React.FC<OWASPCoverageMatrixProps> = ({
               >
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-bold font-mono text-cyan-400">
+                    <span className="text-xs font-bold font-mono text-[#83cfc0]">
                       {cat.category_code}
                     </span>
                     <span
@@ -99,10 +99,10 @@ export const OWASPCoverageMatrix: React.FC<OWASPCoverageMatrixProps> = ({
                         cat.status === 'tested'
                           ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/60'
                           : cat.status === 'partially_tested'
-                          ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-800/60'
+                          ? 'bg-[#142620] text-[#a1e2d5] border border-[#2b4e48]/60'
                           : cat.status === 'manual_review_required'
                           ? 'bg-amber-950/80 text-amber-300 border border-amber-800/60'
-                          : 'bg-slate-900 text-slate-500 border border-slate-800'
+                          : 'bg-slate-900 text-slate-500 border border-[#2a333d]'
                       }`}
                     >
                       {cat.status.replace('_', ' ')}
@@ -132,7 +132,7 @@ export const OWASPCoverageMatrix: React.FC<OWASPCoverageMatrixProps> = ({
 
               {/* Collapsible Details */}
               {isExpanded && (
-                <div className="px-4 pb-4 pt-2 border-t border-slate-800/60 space-y-3 bg-slate-950/30 text-xs">
+                <div className="px-4 pb-4 pt-2 border-t border-[#2a333d]/60 space-y-3 bg-slate-950/30 text-xs">
                   <div className="text-slate-400 text-[11px] font-mono">
                     Registered Automated Tests & Diagnostic Scope:
                   </div>
@@ -142,10 +142,10 @@ export const OWASPCoverageMatrix: React.FC<OWASPCoverageMatrixProps> = ({
                     return (
                       <div
                         key={t.test_id}
-                        className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg space-y-1.5"
+                        className="p-3 bg-[#11171e] border border-[#2a333d] rounded-lg space-y-1.5"
                       >
                         <div className="flex items-center justify-between font-mono">
-                          <span className="text-cyan-300 font-semibold">{t.test_id}: {t.name}</span>
+                          <span className="text-[#a1e2d5] font-semibold">{t.test_id}: {t.name}</span>
                           <span
                             className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-semibold ${
                               exec?.outcome === 'vulnerable'

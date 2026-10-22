@@ -10,7 +10,8 @@ import {
   FindingSource,
   FindingEvidence,
   TestExecution,
-  ToolExecutionRecord
+  ToolExecutionRecord,
+  ScanProfile
 } from '../src/types/proofvapt.js';
 import { db, ARTIFACTS_DIR } from './db.js';
 import { ScopeEnforcingEgressProxy } from './egressProxy.js';
@@ -90,12 +91,36 @@ export class ScanSupervisor {
     this.activeJobs.set(scanId, activeJob);
 
     // Launch pipeline asynchronously
-    this.executePipeline(scan.id, scan.target).catch((err) => {
+    this.executePipeline(scan.id, scan.target).catch(async (err) => {
       console.error(`[Supervisor] Pipeline fatal failure for scan ${scanId}:`, err);
+      activeJob.abortController.abort();
+
+      for (const proc of activeJob.activeProcesses) {
+        try {
+          if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
+          else proc.kill('SIGTERM');
+        } catch {
+          try { proc.kill('SIGKILL'); } catch { /* Process already exited. */ }
+        }
+      }
+      try { await activeJob.egressProxy?.stop(); } catch (cleanupError) {
+        console.error(`[Supervisor] Proxy cleanup failed for scan ${scanId}:`, cleanupError);
+      }
+      this.activeJobs.delete(scanId);
+
       const current = db.getScan(scanId);
       if (current && current.status !== 'aborted') {
+        const endedAt = new Date().toISOString();
         current.status = 'failed';
-        current.stop_condition_triggered = `Fatal error: ${err.message}`;
+        current.completed_at = endedAt;
+        current.stop_condition_triggered = `Fatal error: ${err instanceof Error ? err.message : 'unknown worker error'}`;
+        current.stage_progress[current.current_stage] = {
+          ...current.stage_progress[current.current_stage],
+          status: 'failed',
+          progress_pct: 100,
+          end_time: endedAt,
+          summary: 'Assessment stopped because a required worker failed.'
+        };
         db.saveScan(current);
       }
     });
@@ -175,7 +200,7 @@ export class ScanSupervisor {
     if (status === 'running' && !scan.stage_progress[stage].start_time) {
       scan.stage_progress[stage].start_time = new Date().toISOString();
     }
-    if (status === 'completed' || status === 'failed') {
+    if (status === 'completed' || status === 'failed' || status === 'skipped') {
       scan.stage_progress[stage].end_time = new Date().toISOString();
     }
     db.saveScan(scan);
@@ -184,8 +209,9 @@ export class ScanSupervisor {
   private async executePipeline(scanId: string, target: TargetProfile) {
     const job = this.activeJobs.get(scanId);
     if (!job) return;
+    const scanProfile: ScanProfile = db.getScan(scanId)?.scan_profile || 'passive_only';
 
-    this.appendLog(scanId, `Initializing ProofVAPT assessment pipeline against ${target.target_url}`);
+    this.appendLog(scanId, `Initializing ${scanProfile} ProofVAPT assessment against ${target.target_url}`);
 
     // STAGE 1: Scope & Connection-Time SSRF Validation
     this.updateStage(scanId, 'scope_validation', 'running', 10, 'Validating target scope and egress proxy');
@@ -218,9 +244,11 @@ export class ScanSupervisor {
       const scan = db.getScan(scanId);
       if (scan) {
         scan.status = 'failed';
+        scan.completed_at = new Date().toISOString();
         scan.stop_condition_triggered = `Scope check failed: ${destCheck.reason}`;
         db.saveScan(scan);
       }
+      this.activeJobs.delete(scanId);
       return;
     }
     this.appendLog(scanId, `Scope confirmed: Host '${url.hostname}' resolved to verified IP ${destCheck.ip}`);
@@ -260,23 +288,30 @@ export class ScanSupervisor {
 
     if (job.abortController.signal.aborted) return;
 
-    // STAGE 3: Rate-Limited Content Discovery (Real ffuf CLI)
-    this.updateStage(scanId, 'discovery', 'running', 40, 'Executing ffuf rate-limited directory brute-force');
-    this.appendLog(scanId, 'Stage 3: Spawning real ffuf binary with rate limit (10 rps) routed through Egress Proxy');
+    // STAGE 3: Content discovery is an explicitly active operation; do not
+    // run wordlist fuzzing for a passive-only assessment profile.
+    if (scanProfile === 'passive_only') {
+      this.updateStage(scanId, 'discovery', 'skipped', 100, 'Skipped by passive-only profile; no wordlist fuzzing was run.');
+      this.appendLog(scanId, 'Stage 3: Skipped ffuf because the selected profile is passive-only.');
+    } else {
+      this.updateStage(scanId, 'discovery', 'running', 40, 'Running rate-limited content discovery');
+      this.appendLog(scanId, 'Stage 3: Running ffuf through the scope-enforcing proxy with rate and request budgets.');
 
-    await this.executeFfuf(scanId, target, proxyPort, job);
-    this.updateStage(scanId, 'discovery', 'completed', 100, 'Content discovery completed');
+      await this.executeFfuf(scanId, target, proxyPort, job);
+      if (job.abortController.signal.aborted) return;
+      this.updateStage(scanId, 'discovery', 'completed', 100, 'Content discovery completed');
+    }
 
     if (job.abortController.signal.aborted) return;
 
-    // STAGE 4: Automated Vulnerability Testing (OWASP ZAP Automation Framework)
+    // STAGE 4: OWASP ZAP spider and passive analysis; active scanning only
+    // runs for the standard_active profile with explicit target authorization.
     this.updateStage(scanId, 'automated_checks', 'running', 60, 'Running OWASP ZAP Automation Framework');
-    this.appendLog(scanId, 'Stage 4: Executing OWASP ZAP Automation Framework (Spider + Passive Analysis + Active Scan)');
+    this.appendLog(scanId, 'Stage 4: Running the ZAP spider/passive checks and only enabling active checks when explicitly authorized.');
 
-    await this.executeZap(scanId, target, proxyPort, job);
-    this.updateStage(scanId, 'automated_checks', 'completed', 100, 'Automated checks completed');
-
+    await this.executeZap(scanId, target, proxyPort, job, scanProfile);
     if (job.abortController.signal.aborted) return;
+    this.updateStage(scanId, 'automated_checks', 'completed', 100, 'Automated checks completed');
 
     // STAGE 5: Finding Correlation & Deduplication
     this.updateStage(scanId, 'correlation', 'running', 80, 'Deduplicating findings and mapping to OWASP Top 10:2025');
@@ -347,16 +382,16 @@ export class ScanSupervisor {
     const startedAt = new Date().toISOString();
     this.appendLog(scanId, `Running: ffuf ${args.join(' ')}`);
 
-    return new Promise((resolve) => {
+    return new Promise<void>((resolve, reject) => {
       let proc: ChildProcess;
       try {
         proc = spawn(ffufBin, args, {
           detached: true,
           env: { ...process.env, PATH: `${process.env.PATH}:/app/applet/bin` }
         });
-      } catch (err: any) {
-        this.appendLog(scanId, `ffuf spawn warning: ${err.message}. Generating test execution record.`);
-        resolve();
+      } catch (err) {
+        this.appendLog(scanId, `ffuf could not start: ${err instanceof Error ? err.message : 'unknown spawn error'}`);
+        reject(err);
         return;
       }
 
@@ -377,9 +412,9 @@ export class ScanSupervisor {
           id: `tool-${Date.now()}-ffuf`,
           scan_id: scanId,
           tool_name: 'ffuf',
-          tool_version: '2.1.0',
+          tool_version: 'Not captured; see /api/tools/status',
           command_line: `ffuf ${args.join(' ')}`,
-          exit_code: code || 0,
+          exit_code: code ?? 1,
           raw_output_path: outputPath,
           stdout_summary: stdout.slice(0, 500),
           stderr_summary: stderr.slice(0, 500),
@@ -428,9 +463,9 @@ export class ScanSupervisor {
                   owasp_category: 'A02:2025 - Security Misconfiguration',
                   owasp_category_code: 'A02',
                   source_severity: 'HIGH',
-                  official_cvss_score: 7.5,
-                  official_cvss_version: '3.1',
-                  official_cvss_vector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N',
+                  official_cvss_score: null,
+                  official_cvss_version: null,
+                  official_cvss_vector: null,
                   contextual_remediation_priority: 8.0,
                   affected_url: endpointUrl,
                   parameter: null,
@@ -480,12 +515,16 @@ export class ScanSupervisor {
             this.appendLog(scanId, `Failed to parse ffuf JSON output: ${err.message}`);
           }
         }
-        resolve();
+        if (code !== 0) {
+          reject(new Error(`ffuf exited with code ${String(code)}. See the recorded stderr summary and scan log.`));
+        } else {
+          resolve();
+        }
       });
 
       proc.on('error', (err) => {
         this.appendLog(scanId, `ffuf execution error: ${err.message}`);
-        resolve();
+        reject(err);
       });
     });
   }
@@ -497,7 +536,8 @@ export class ScanSupervisor {
     scanId: string,
     target: TargetProfile,
     proxyPort: number,
-    job: ActiveJob
+    job: ActiveJob,
+    scanProfile: ScanProfile
   ): Promise<void> {
     const zapBin = fs.existsSync('/usr/local/bin/zap.sh')
       ? '/usr/local/bin/zap.sh'
@@ -506,44 +546,64 @@ export class ScanSupervisor {
     const zapPlanPath = path.resolve(ARTIFACTS_DIR, `${scanId}_zap_plan.yaml`);
     const zapReportPath = path.resolve(ARTIFACTS_DIR, `${scanId}_zap_report.json`);
 
-    // Build declarative Automation Framework YAML plan
-    const zapYamlPlan = `
-env:
-  contexts:
-    - name: "ProofVAPT-Scope"
-      urls:
-        - "${target.target_url}"
-      includePaths:
-        - "${target.target_url}.*"
-      excludePaths:
-        ${target.excluded_paths.map((p) => `- ".*${p}.*"`).join('\n        ')}
-  parameters:
-    failOnError: false
-    progressToStdout: false
-jobs:
-  - type: spider
-    parameters:
-      context: "ProofVAPT-Scope"
-      user: ""
-      url: "${target.target_url}"
-      maxDuration: 1
-      maxDepth: 3
-  - type: passiveScan-wait
-    parameters:
-      maxDuration: 1
-  ${target.active_scan_scope_confirmed && target.mode !== 'live' ? `
-  - type: activeScan
-    parameters:
-      context: "ProofVAPT-Scope"
-      url: "${target.target_url}"
-      maxDuration: 2
-  ` : ''}
-  - type: report
-    parameters:
-      template: "traditional-json"
-      reportDir: "${ARTIFACTS_DIR}"
-      reportFile: "${scanId}_zap_report.json"
-`;
+    // Quote every dynamic scalar and escape user-controlled path strings before
+    // embedding them in YAML/regex. A crafted exclusion must not alter the plan.
+    const quoteYaml = (value: string) => JSON.stringify(value);
+    const escapeRegex = (value: string) => Array.from(value).map((character) =>
+      '.+*?^$(){}|[]\\'.includes(character) ? '\\' + character : character
+    ).join('');
+    const targetUrl = new URL(target.target_url);
+    const basePath = targetUrl.pathname.replace(/\/$/, '');
+    const includePattern = '^' + escapeRegex(targetUrl.origin) + escapeRegex(basePath) + '(?:/.*)?(?:\\?.*)?$';
+    const excludePatterns = (target.excluded_paths || []).map((excludedPath) =>
+      '.*' + escapeRegex(excludedPath) + '(?:/.*)?(?:\\?.*)?$'
+    );
+
+    const yamlLines = [
+      'env:',
+      '  contexts:',
+      '    - name: "ProofVAPT-Scope"',
+      '      urls:',
+      '        - ' + quoteYaml(target.target_url),
+      '      includePaths:',
+      '        - ' + quoteYaml(includePattern)
+    ];
+    if (excludePatterns.length > 0) {
+      yamlLines.push('      excludePaths:');
+      for (const pattern of excludePatterns) yamlLines.push('        - ' + quoteYaml(pattern));
+    }
+    yamlLines.push(
+      '  parameters:',
+      '    failOnError: true',
+      '    progressToStdout: false',
+      'jobs:',
+      '  - type: spider',
+      '    parameters:',
+      '      context: "ProofVAPT-Scope"',
+      '      url: ' + quoteYaml(target.target_url),
+      '      maxDuration: 1',
+      '      maxDepth: 3',
+      '  - type: passiveScan-wait',
+      '    parameters:',
+      '      maxDuration: 1'
+    );
+    if (scanProfile === 'standard_active' && target.active_scan_scope_confirmed) {
+      yamlLines.push(
+        '  - type: activeScan',
+        '    parameters:',
+        '      context: "ProofVAPT-Scope"',
+        '      url: ' + quoteYaml(target.target_url),
+        '      maxDuration: 2'
+      );
+    }
+    yamlLines.push(
+      '  - type: report',
+      '    parameters:',
+      '      template: "traditional-json"',
+      '      reportDir: ' + quoteYaml(ARTIFACTS_DIR),
+      '      reportFile: ' + quoteYaml(scanId + '_zap_report.json')
+    );
+    const zapYamlPlan = yamlLines.join('\n') + '\n';
 
     fs.writeFileSync(zapPlanPath, zapYamlPlan, 'utf-8');
 
@@ -559,20 +619,19 @@ jobs:
     const startedAt = new Date().toISOString();
     this.appendLog(scanId, `Running ZAP AF: zap.sh -cmd -autorun ${path.basename(zapPlanPath)} (proxying through 127.0.0.1:${proxyPort})`);
 
-    return new Promise((resolve) => {
+    return new Promise<void>((resolve, reject) => {
       let proc: ChildProcess;
       try {
         proc = spawn(zapBin, args, {
           detached: true,
           env: {
             ...process.env,
-            JAVA_HOME: '/usr/lib/jvm/java-17-openjdk-amd64',
             PATH: `${process.env.PATH}:/usr/local/bin:/opt/zap`
           }
         });
-      } catch (err: any) {
-        this.appendLog(scanId, `ZAP spawn error: ${err.message}. Recording execution metadata.`);
-        resolve();
+      } catch (err) {
+        this.appendLog(scanId, `ZAP could not start: ${err instanceof Error ? err.message : 'unknown spawn error'}`);
+        reject(err);
         return;
       }
 
@@ -580,9 +639,14 @@ jobs:
 
       let stdout = '';
       let stderr = '';
+      let reportParsed = false;
 
-      proc.stdout?.on('data', (d) => { stdout += d.toString(); });
-      proc.stderr?.on('data', (d) => { stderr += d.toString(); });
+      proc.stdout?.on('data', (d) => {
+        if (stdout.length < 100000) stdout += d.toString().slice(0, 100000 - stdout.length);
+      });
+      proc.stderr?.on('data', (d) => {
+        if (stderr.length < 100000) stderr += d.toString().slice(0, 100000 - stderr.length);
+      });
 
       // Timeout safety: 90 seconds max for ZAP scan job
       const zapTimeout = setTimeout(() => {
@@ -591,7 +655,7 @@ jobs:
         } catch {
           proc.kill();
         }
-      }, 90000);
+      }, scanProfile === 'standard_active' ? 180000 : 120000);
 
       proc.on('close', (code) => {
         clearTimeout(zapTimeout);
@@ -601,10 +665,10 @@ jobs:
         db.saveToolRun({
           id: `tool-${Date.now()}-zap`,
           scan_id: scanId,
-          tool_name: 'owasp_zap_active',
-          tool_version: '2.16.0',
+          tool_name: scanProfile === 'standard_active' ? 'owasp_zap_active' : 'owasp_zap_passive',
+          tool_version: 'Not captured; see /api/tools/status',
           command_line: `zap.sh ${args.join(' ')}`,
-          exit_code: code || 0,
+          exit_code: code ?? 1,
           raw_output_path: zapReportPath,
           stdout_summary: stdout.slice(0, 500),
           stderr_summary: stderr.slice(0, 500),
@@ -616,6 +680,7 @@ jobs:
         if (fs.existsSync(zapReportPath)) {
           try {
             const zapReport = JSON.parse(fs.readFileSync(zapReportPath, 'utf-8'));
+            reportParsed = true;
             const sites = zapReport.site || [];
             let zapAlertsCount = 0;
 
@@ -669,8 +734,8 @@ jobs:
                   owasp_category: owaspCat,
                   owasp_category_code: owaspCode,
                   source_severity: mappedSeverity,
-                  official_cvss_score: mappedSeverity === 'HIGH' ? 7.5 : mappedSeverity === 'MEDIUM' ? 5.3 : 3.5,
-                  official_cvss_version: '3.1',
+                  official_cvss_score: null,
+                  official_cvss_version: null,
                   official_cvss_vector: null,
                   contextual_remediation_priority: mappedSeverity === 'HIGH' ? 7.8 : 5.0,
                   affected_url: firstInstance.uri || target.target_url,
@@ -724,15 +789,21 @@ jobs:
             this.appendLog(scanId, `Error parsing ZAP report JSON: ${err.message}`);
           }
         } else {
-          this.appendLog(scanId, 'ZAP scan executed. Passive scan analysis finalized.');
+          this.appendLog(scanId, 'ZAP did not produce a JSON report; findings from this stage are incomplete.');
         }
 
-        resolve();
+        if (code !== 0) {
+          reject(new Error(`OWASP ZAP exited with code ${String(code)}. Review the scan log and tool execution record.`));
+        } else if (!reportParsed) {
+          reject(new Error('OWASP ZAP completed without a parseable JSON report.'));
+        } else {
+          resolve();
+        }
       });
 
       proc.on('error', (err) => {
         this.appendLog(scanId, `ZAP execution process error: ${err.message}`);
-        resolve();
+        reject(err);
       });
     });
   }

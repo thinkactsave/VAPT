@@ -37,10 +37,10 @@ export const AttackSurfaceExplorer: React.FC<AttackSurfaceExplorerProps> = ({
   return (
     <div className="space-y-6">
       {/* Header Strip */}
-      <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="bg-[#141a21] border border-[#2a333d] rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold text-cyan-400 uppercase tracking-wider font-mono">
+            <span className="text-xs font-semibold text-[#83cfc0] uppercase tracking-wider font-mono">
               Attack Surface Discovery
             </span>
             <span className="text-slate-600">·</span>
@@ -50,12 +50,12 @@ export const AttackSurfaceExplorer: React.FC<AttackSurfaceExplorerProps> = ({
             Discovered Web Endpoints & Resources
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Aggregated attack surface mapped by <code className="text-cyan-300 font-mono">ffuf</code> content fuzzing, crawler spiders, and HTTP recon.
+            Aggregated attack surface mapped by <code className="text-[#a1e2d5] font-mono">ffuf</code> content fuzzing, crawler spiders, and HTTP recon.
           </p>
         </div>
 
         {targetUrl && (
-          <div className="text-xs font-mono text-slate-400 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800 truncate max-w-sm">
+          <div className="text-xs font-mono text-slate-400 bg-slate-900 px-3 py-1.5 rounded-lg border border-[#2a333d] truncate max-w-sm">
             Base: {targetUrl}
           </div>
         )}
@@ -71,16 +71,16 @@ export const AttackSurfaceExplorer: React.FC<AttackSurfaceExplorerProps> = ({
             placeholder="Search discovered paths or parameters..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-[#111827] border border-[#1F2937] rounded-lg pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+            className="w-full bg-[#141a21] border border-[#2a333d] rounded-lg pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#4e9385] font-mono"
           />
         </div>
 
         {/* Origin Filter Segmented Control */}
-        <div className="flex items-center gap-1 p-1 bg-[#111827] border border-[#1F2937] rounded-lg shrink-0">
+        <div className="flex items-center gap-1 p-1 bg-[#141a21] border border-[#2a333d] rounded-lg shrink-0">
           <button
             onClick={() => setOriginFilter('all')}
             className={`px-3 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${
-              originFilter === 'all' ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-400 hover:text-white'
+              originFilter === 'all' ? 'bg-cyan-500/20 text-[#a1e2d5]' : 'text-slate-400 hover:text-white'
             }`}
           >
             All Sources
@@ -88,7 +88,7 @@ export const AttackSurfaceExplorer: React.FC<AttackSurfaceExplorerProps> = ({
           <button
             onClick={() => setOriginFilter('ffuf')}
             className={`px-3 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap font-mono ${
-              originFilter === 'ffuf' ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-400 hover:text-white'
+              originFilter === 'ffuf' ? 'bg-cyan-500/20 text-[#a1e2d5]' : 'text-slate-400 hover:text-white'
             }`}
           >
             ffuf ({endpoints.filter((e) => e.discovered_by === 'ffuf').length})
@@ -96,7 +96,7 @@ export const AttackSurfaceExplorer: React.FC<AttackSurfaceExplorerProps> = ({
           <button
             onClick={() => setOriginFilter('zap_spider')}
             className={`px-3 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap font-mono ${
-              originFilter === 'zap_spider' ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-400 hover:text-white'
+              originFilter === 'zap_spider' ? 'bg-cyan-500/20 text-[#a1e2d5]' : 'text-slate-400 hover:text-white'
             }`}
           >
             ZAP Spider
@@ -104,7 +104,7 @@ export const AttackSurfaceExplorer: React.FC<AttackSurfaceExplorerProps> = ({
           <button
             onClick={() => setOriginFilter('recon')}
             className={`px-3 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap font-mono ${
-              originFilter === 'recon' ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-400 hover:text-white'
+              originFilter === 'recon' ? 'bg-cyan-500/20 text-[#a1e2d5]' : 'text-slate-400 hover:text-white'
             }`}
           >
             Recon
@@ -112,7 +112,7 @@ export const AttackSurfaceExplorer: React.FC<AttackSurfaceExplorerProps> = ({
         </div>
 
         {/* Status Filter */}
-        <div className="flex items-center gap-1 p-1 bg-[#111827] border border-[#1F2937] rounded-lg shrink-0">
+        <div className="flex items-center gap-1 p-1 bg-[#141a21] border border-[#2a333d] rounded-lg shrink-0">
           <button
             onClick={() => setStatusFilter('all')}
             className={`px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${
@@ -149,10 +149,10 @@ export const AttackSurfaceExplorer: React.FC<AttackSurfaceExplorerProps> = ({
       </div>
 
       {/* High-Density Data Grid */}
-      <div className="bg-[#111827] border border-[#1F2937] rounded-xl overflow-hidden">
+      <div className="bg-[#141a21] border border-[#2a333d] rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-900/80 border-b border-[#1F2937] text-slate-400 uppercase font-mono tracking-wider">
+            <thead className="bg-[#171e25] border-b border-[#2a333d] text-slate-400 uppercase font-mono tracking-wider">
               <tr>
                 <th className="py-3 px-4">Method</th>
                 <th className="py-3 px-4">Endpoint Path</th>
@@ -205,7 +205,7 @@ export const AttackSurfaceExplorer: React.FC<AttackSurfaceExplorerProps> = ({
                       <span
                         className={`text-[10px] px-2 py-0.5 rounded font-mono ${
                           ep.discovered_by === 'ffuf'
-                            ? 'bg-cyan-950/60 text-cyan-300 border border-cyan-800/40'
+                            ? 'bg-[#142620] text-[#a1e2d5] border border-[#2b4e48]/40'
                             : 'bg-indigo-950/60 text-indigo-300 border border-indigo-800/40'
                         }`}
                       >

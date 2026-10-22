@@ -59,10 +59,10 @@ export const FindingsExplorer: React.FC<FindingsExplorerProps> = ({
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="bg-[#141a21] border border-[#2a333d] rounded-xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold text-cyan-400 uppercase tracking-wider font-mono">
+            <span className="text-xs font-semibold text-[#83cfc0] uppercase tracking-wider font-mono">
               Unified Findings & Intelligence
             </span>
             <span className="text-slate-600">·</span>
@@ -72,11 +72,11 @@ export const FindingsExplorer: React.FC<FindingsExplorerProps> = ({
             Correlated Vulnerability Register
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Deduplicated results from <code className="text-cyan-300 font-mono">OWASP ZAP</code> and custom probers with multi-tool provenance and decoupled remediation tracking.
+            Deduplicated results from <code className="text-[#a1e2d5] font-mono">OWASP ZAP</code> and custom probers with multi-tool provenance and decoupled remediation tracking.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 font-mono text-xs text-slate-400 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800">
+        <div className="flex items-center gap-2 font-mono text-xs text-slate-400 bg-slate-900 px-3 py-1.5 rounded-lg border border-[#2a333d]">
           <span className="text-emerald-400 font-semibold">{findings.filter((f) => f.remediation_status === 'remediated_verified').length}</span> Remediated
           <span>·</span>
           <span className="text-rose-400 font-semibold">{findings.filter((f) => f.source_severity === 'CRITICAL' || f.source_severity === 'HIGH').length}</span> Crit/High
@@ -93,7 +93,7 @@ export const FindingsExplorer: React.FC<FindingsExplorerProps> = ({
             placeholder="Search title, URL, or CWE (e.g. CWE-79)..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-[#111827] border border-[#1F2937] rounded-lg pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+            className="w-full bg-[#141a21] border border-[#2a333d] rounded-lg pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#4e9385] font-mono"
           />
         </div>
 
@@ -101,7 +101,7 @@ export const FindingsExplorer: React.FC<FindingsExplorerProps> = ({
         <select
           value={severityFilter}
           onChange={(e) => setSeverityFilter(e.target.value)}
-          className="bg-[#111827] border border-[#1F2937] rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-cyan-500"
+          className="bg-[#141a21] border border-[#2a333d] rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-[#4e9385]"
         >
           <option value="all">All Severities</option>
           <option value="CRITICAL">Critical</option>
@@ -115,7 +115,7 @@ export const FindingsExplorer: React.FC<FindingsExplorerProps> = ({
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="bg-[#111827] border border-[#1F2937] rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-cyan-500"
+          className="bg-[#141a21] border border-[#2a333d] rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-[#4e9385]"
         >
           <option value="all">All OWASP 2025</option>
           <option value="A01">A01: Broken Access Control</option>
@@ -134,7 +134,7 @@ export const FindingsExplorer: React.FC<FindingsExplorerProps> = ({
         <select
           value={remediationFilter}
           onChange={(e) => setRemediationFilter(e.target.value)}
-          className="bg-[#111827] border border-[#1F2937] rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-cyan-500"
+          className="bg-[#141a21] border border-[#2a333d] rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-[#4e9385]"
         >
           <option value="all">All Remediation States</option>
           <option value="open">Open</option>
@@ -145,10 +145,10 @@ export const FindingsExplorer: React.FC<FindingsExplorerProps> = ({
       </div>
 
       {/* High-Density Findings Table */}
-      <div className="bg-[#111827] border border-[#1F2937] rounded-xl overflow-hidden">
+      <div className="bg-[#141a21] border border-[#2a333d] rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-900/80 border-b border-[#1F2937] text-slate-400 uppercase font-mono tracking-wider">
+            <thead className="bg-[#171e25] border-b border-[#2a333d] text-slate-400 uppercase font-mono tracking-wider">
               <tr>
                 <th className="py-3 px-4">Severity</th>
                 <th className="py-3 px-4">Vulnerability Title</th>
@@ -182,7 +182,7 @@ export const FindingsExplorer: React.FC<FindingsExplorerProps> = ({
 
                     {/* Title & CWE */}
                     <td className="py-3 px-4 max-w-sm">
-                      <div className="text-white font-medium hover:text-cyan-300 transition-colors cursor-pointer" onClick={() => setSelectedFinding(f)}>
+                      <div className="text-white font-medium hover:text-[#a1e2d5] transition-colors cursor-pointer" onClick={() => setSelectedFinding(f)}>
                         {f.title}
                       </div>
                       <div className="text-[11px] text-slate-400 font-mono truncate mt-0.5">
@@ -195,7 +195,7 @@ export const FindingsExplorer: React.FC<FindingsExplorerProps> = ({
 
                     {/* OWASP 2025 */}
                     <td className="py-3 px-4 whitespace-nowrap font-mono text-[11px] text-slate-300">
-                      <span className="text-cyan-400 font-semibold">{f.owasp_category_code}</span>
+                      <span className="text-[#83cfc0] font-semibold">{f.owasp_category_code}</span>
                       <span className="text-slate-500 text-[10px] block truncate max-w-[140px]">
                         {f.owasp_category.split('- ')[1] || f.owasp_category}
                       </span>
@@ -204,9 +204,9 @@ export const FindingsExplorer: React.FC<FindingsExplorerProps> = ({
                     {/* CVSS & CRP */}
                     <td className="py-3 px-4 whitespace-nowrap font-mono">
                       <div className="text-slate-300 tabular-nums">
-                        CVSS: <span className="font-semibold text-white">{f.official_cvss_score || 'N/A'}</span>
+                        CVSS: <span className="font-semibold text-white">{f.official_cvss_score != null ? f.official_cvss_score.toFixed(1) : 'Not scored'}</span>
                       </div>
-                      <div className="text-[10px] text-cyan-400 tabular-nums">
+                      <div className="text-[10px] text-[#83cfc0] tabular-nums">
                         CRP: {f.contextual_remediation_priority.toFixed(1)} / 10
                       </div>
                     </td>
@@ -264,10 +264,10 @@ export const FindingsExplorer: React.FC<FindingsExplorerProps> = ({
                         <button
                           onClick={() => handleRetest(f.id, false)}
                           disabled={retestingId === f.id}
-                          className="p-1 text-slate-400 hover:text-cyan-400 rounded hover:bg-slate-800 transition-colors"
+                          className="p-1 text-slate-400 hover:text-[#83cfc0] rounded hover:bg-slate-800 transition-colors"
                           title="Run targeted retest"
                         >
-                          <RotateCcw className={`w-3.5 h-3.5 ${retestingId === f.id ? 'animate-spin text-cyan-400' : ''}`} />
+                          <RotateCcw className={`w-3.5 h-3.5 ${retestingId === f.id ? 'animate-spin text-[#83cfc0]' : ''}`} />
                         </button>
                       </div>
                     </td>
