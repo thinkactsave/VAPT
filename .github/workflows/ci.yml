@@ -49,8 +49,8 @@ jobs:
           set -eu
           docker run -d --name proofvapt-smoke \
             --read-only \
-            --tmpfs /tmp:rw,nosuid,size=768m \
-            --tmpfs /data:rw,nosuid,size=100m \
+            --tmpfs /tmp:rw,nosuid,size=768m,mode=1777 \
+            --tmpfs /data:rw,nosuid,size=100m,uid=1000,gid=1000,mode=0750 \
             --cap-drop=ALL \
             --security-opt no-new-privileges:true \
             --pids-limit=256 \
@@ -72,7 +72,10 @@ jobs:
             fi
             sleep 2
           done
-          test "$healthy" = "1"
+          if [ "$healthy" != "1" ]; then
+            docker logs proofvapt-smoke
+            exit 1
+          fi
           curl -fsS http://127.0.0.1:39000/ >/dev/null
 
           unauth_status=$(curl -sS -o /tmp/proofvapt-unauth.json -w '%{http_code}' http://127.0.0.1:39000/api/scans)
