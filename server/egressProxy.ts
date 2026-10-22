@@ -1,4 +1,5 @@
 import http from 'http';
+import https from 'https';
 import net from 'net';
 import dns from 'dns/promises';
 import { TargetProfile, ProxyAccessLog } from '../src/types/proofvapt.js';
@@ -229,9 +230,9 @@ export class ScopeEnforcingEgressProxy {
       }
     }
 
-    if (targetUrl.protocol !== 'http:') {
+    if (targetUrl.protocol !== 'http:' && targetUrl.protocol !== 'https:') {
       res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('HTTPS requests must use CONNECT tunnelling');
+      res.end('Only HTTP and HTTPS targets are supported');
       return;
     }
 
@@ -279,7 +280,8 @@ export class ScopeEnforcingEgressProxy {
     }
 
     // Forward request
-    const proxyReq = http.request(
+    const requestModule = targetUrl.protocol === 'https:' ? https : http;
+    const proxyReq = requestModule.request(
       {
         hostname: validation.ip || host,
         port,
@@ -289,6 +291,10 @@ export class ScopeEnforcingEgressProxy {
           ...req.headers,
           host: targetUrl.host,
         },
+        ...(targetUrl.protocol === 'https:' ? {
+          servername: net.isIP(host) === 0 ? host : undefined,
+          rejectUnauthorized: false
+        } : {})
       },
       (proxyRes) => {
         if (proxyRes.statusCode && proxyRes.statusCode >= 500) {
