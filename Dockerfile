@@ -40,7 +40,8 @@ RUN set -eux; \
     echo "efe799aaa3627db683b43f00c9c210aea0b75c00cc8f0a0f0434d12bb3ddde5a  /tmp/zap.tar.gz" | sha256sum -c -; \
     tar -xzf /tmp/zap.tar.gz -C /opt; \
     test -x /opt/ZAP_2.17.0/zap.sh; \
-    ln -s /opt/ZAP_2.17.0/zap.sh /usr/local/bin/zap.sh; \
+    printf '#!/bin/sh\nexec /opt/ZAP_2.17.0/zap.sh "$@"\n' > /usr/local/bin/zap.sh; \
+    chmod 0755 /usr/local/bin/zap.sh; \
     rm -f /tmp/zap.tar.gz
 
 WORKDIR /app
