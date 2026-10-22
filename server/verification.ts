@@ -1,101 +1,131 @@
-import http from 'http';
-import https from 'https';
+import http from 'node:http';
+import https from 'node:https';
+import dns from 'node:dns/promises';
+import net from 'node:net';
 import { db } from './db.js';
-import { VerificationAttempt, UnifiedFinding } from '../src/types/proofvapt.js';
+import { ScopeEnforcingEgressProxy } from './egressProxy.js';
+import { VerificationAttempt, UnifiedFinding, TargetProfile } from '../src/types/proofvapt.js';
+
+type ProbeResponse = {
+  statusCode: number;
+  headers: Record<string, string | string[] | undefined>;
+  body: string;
+};
+
+function bareHostname(hostname: string): string {
+  return hostname.replace(/^\[|\]$/g, '').toLowerCase();
+}
 
 export class RemediationVerificationEngine {
   /**
-   * Executes a reproducible verification retest against a specific finding
+   * Re-tests a saved finding only inside the original scan's host/port scope.
+   * DNS is resolved, checked, then pinned for the request.
    */
   public static async executeRetest(
     findingId: string,
-    simulatedFixApplied: boolean = false
+    simulatedFixApplied = false
   ): Promise<{ finding: UnifiedFinding; attempt: VerificationAttempt }> {
     const finding = db.getFinding(findingId);
-    if (!finding) {
-      throw new Error(`Finding ${findingId} not found`);
+    if (!finding) throw new Error('Finding not found.');
+
+    const scan = db.getScan(finding.scan_id);
+    const target = scan?.target;
+    if (!target) throw new Error('Finding has no saved target scope.');
+
+    let url: URL;
+    try {
+      url = new URL(finding.affected_url);
+    } catch {
+      throw new Error('Finding URL is invalid and cannot be retested.');
     }
 
-    let outcome: 'still_vulnerable' | 'remediated' | 'inconclusive' = 'still_vulnerable';
-    let retestEvidence = '';
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      throw new Error('Only HTTP and HTTPS findings can be retested.');
+    }
+    if (bareHostname(url.hostname) !== bareHostname(target.hostname)) {
+      throw new Error('Retest blocked: finding host is outside the original scan scope.');
+    }
 
-    const url = new URL(finding.affected_url);
-    const client = url.protocol === 'https:' ? https : http;
+    const port = url.port ? Number(url.port) : (url.protocol === 'https:' ? 443 : 80);
+    if (!Array.isArray(target.allowed_ports) || !target.allowed_ports.includes(port)) {
+      throw new Error('Retest blocked: finding port is outside the original scan scope.');
+    }
+    if (simulatedFixApplied && (process.env.NODE_ENV === 'production' || target.mode !== 'lab')) {
+      throw new Error('Simulated remediation is available only for non-production lab assessments.');
+    }
+
+    let outcome: VerificationAttempt['outcome'] = 'inconclusive';
+    let retestEvidence = '';
 
     try {
       if (simulatedFixApplied) {
-        // Controlled fix validation mode for research evaluation
         outcome = 'remediated';
-        retestEvidence = `Target endpoint ${url.pathname} retested after patch application. Defensive control verified. Condition resolved.`;
+        retestEvidence = 'Simulation recorded for a non-production lab assessment. No network request was made; this is not evidence of a real production fix.';
       } else {
-        // Perform real HTTP probe against target endpoint
-        const response = await this.probeUrl(finding.affected_url);
+        const requestHeaders: Record<string, string> = {
+          'User-Agent': 'ProofVAPT-Verifier/1.0',
+          Accept: '*/*'
+        };
+        if (finding.test_id === 'PV-A02-002') {
+          requestHeaders.Origin = 'https://proofvapt-untrusted.invalid';
+        }
+        const response = await this.probeUrl(url, target, requestHeaders);
 
-        // Header check verification
         if (finding.test_id === 'PV-A02-001') {
-          const hasHsts = !!response.headers['strict-transport-security'];
+          const hasHsts = url.protocol !== 'https:' || !!response.headers['strict-transport-security'];
           const hasCsp = !!response.headers['content-security-policy'];
           const hasXfo = !!response.headers['x-frame-options'];
-
-          if (hasHsts && hasCsp && hasXfo) {
+          const hasNosniff = response.headers['x-content-type-options'] === 'nosniff';
+          if (hasHsts && hasCsp && hasXfo && hasNosniff) {
             outcome = 'remediated';
-            retestEvidence = `Security headers present on retest: HSTS=${hasHsts}, CSP=${hasCsp}, XFO=${hasXfo}`;
+            retestEvidence = 'HSTS (when applicable), CSP, X-Frame-Options, and X-Content-Type-Options were present on the retest response.';
           } else {
             outcome = 'still_vulnerable';
-            retestEvidence = `Headers still missing on retest. Current headers: ${Object.keys(response.headers).join(', ')}`;
+            retestEvidence = `Security header baseline remains incomplete. HSTS=${hasHsts}, CSP=${hasCsp}, XFO=${hasXfo}, nosniff=${hasNosniff}.`;
           }
-        }
-        // Exposed file check
-        else if (finding.test_id === 'PV-A02-004') {
-          if (response.statusCode === 404 || response.statusCode === 403) {
+        } else if (finding.test_id === 'PV-A02-004') {
+          if (response.statusCode === 403 || response.statusCode === 404 || response.statusCode === 410) {
             outcome = 'remediated';
-            retestEvidence = `Exposed route now returns HTTP ${response.statusCode} (Access denied/Not found). Remediation confirmed.`;
-          } else if (response.statusCode === 200) {
-            outcome = 'still_vulnerable';
-            retestEvidence = `Route still returns HTTP 200 OK with response body length ${response.body.length}.`;
+            retestEvidence = `Route returned HTTP ${response.statusCode}; access appears restricted. Confirm that the intended file or resource is no longer exposed.`;
           } else {
             outcome = 'inconclusive';
-            retestEvidence = `Received unexpected HTTP status ${response.statusCode}. Manual review recommended.`;
+            retestEvidence = `Route returned HTTP ${response.statusCode}. A status code alone cannot establish that sensitive content is exposed; manual evidence review is required.`;
           }
-        }
-        // CORS check
-        else if (finding.test_id === 'PV-A02-002') {
-          const acao = response.headers['access-control-allow-origin'];
-          if (!acao || acao === 'null') {
-            outcome = 'remediated';
-            retestEvidence = 'CORS header no longer reflects arbitrary origin.';
-          } else {
+        } else if (finding.test_id === 'PV-A02-002') {
+          const allowOrigin = response.headers['access-control-allow-origin'];
+          const allowCredentials = String(response.headers['access-control-allow-credentials'] || '').toLowerCase() === 'true';
+          const reflectsUntrustedOrigin = allowOrigin === 'https://proofvapt-untrusted.invalid';
+          const wildcardWithCredentials = allowOrigin === '*' && allowCredentials;
+          if (reflectsUntrustedOrigin || wildcardWithCredentials) {
             outcome = 'still_vulnerable';
-            retestEvidence = `Access-Control-Allow-Origin: ${acao} still active.`;
+            retestEvidence = `Permissive CORS behavior persists: Access-Control-Allow-Origin=${String(allowOrigin)}, credentials=${allowCredentials}.`;
+          } else {
+            outcome = 'remediated';
+            retestEvidence = `The untrusted Origin was not reflected in a way that indicates permissive credentialed CORS. Access-Control-Allow-Origin=${String(allowOrigin || 'not set')}.`;
           }
         } else {
-          // General probe check
-          if (response.statusCode === 200) {
-            outcome = 'still_vulnerable';
-            retestEvidence = `Endpoint reached with HTTP 200. Parameter behavior unchanged.`;
-          } else {
-            outcome = 'inconclusive';
-            retestEvidence = `Response status ${response.statusCode} requires manual confirmation.`;
-          }
+          outcome = 'inconclusive';
+          retestEvidence = `Received HTTP ${response.statusCode}. Endpoint reachability alone does not prove or disprove this finding; a test-specific reproduction is required.`;
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       outcome = 'inconclusive';
-      retestEvidence = `Retest connection error: ${err.message}`;
+      retestEvidence = `Retest did not complete: ${err instanceof Error ? err.message : 'network or validation error'}`;
     }
 
-    // Update finding state based on confirmed retest outcome
+    const timestamp = new Date().toISOString();
     if (outcome === 'remediated') {
       finding.remediation_status = 'remediated_verified';
-      finding.verification_status = 'verified';
-      finding.verification_notes += ` [Retested ${new Date().toLocaleTimeString()}: Confirmed Remediated]`;
+      finding.verification_status = 'not_reproduced';
+      finding.verification_notes = `${finding.verification_notes} [Retest ${timestamp}: condition not reproduced]`.trim();
     } else if (outcome === 'still_vulnerable') {
       finding.remediation_status = 'reopened';
-      finding.verification_notes += ` [Retested ${new Date().toLocaleTimeString()}: Vulnerability Persists]`;
+      finding.verification_status = 'verified';
+      finding.verification_notes = `${finding.verification_notes} [Retest ${timestamp}: condition persists]`.trim();
     } else {
       finding.remediation_status = 'pending_retest';
       finding.verification_status = 'manual_review_required';
-      finding.verification_notes += ` [Retested ${new Date().toLocaleTimeString()}: Inconclusive, Manual Review Required]`;
+      finding.verification_notes = `${finding.verification_notes} [Retest ${timestamp}: inconclusive; manual review required]`.trim();
     }
 
     db.saveFinding(finding);
@@ -103,8 +133,8 @@ export class RemediationVerificationEngine {
     const attempt: VerificationAttempt = {
       id: `va-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       finding_id: findingId,
-      timestamp: new Date().toISOString(),
-      retest_type: 'probe_endpoint',
+      timestamp,
+      retest_type: finding.test_id === 'PV-A02-001' ? 'check_header' : 'probe_endpoint',
       outcome,
       retest_evidence: retestEvidence
     };
@@ -113,38 +143,64 @@ export class RemediationVerificationEngine {
     return { finding, attempt };
   }
 
-  private static probeUrl(targetUrlStr: string): Promise<{ statusCode: number; headers: Record<string, string | string[] | undefined>; body: string }> {
-    return new Promise((resolve, reject) => {
-      const url = new URL(targetUrlStr);
-      const client = url.protocol === 'https:' ? https : http;
+  private static async probeUrl(
+    url: URL,
+    target: TargetProfile,
+    headers: Record<string, string>
+  ): Promise<ProbeResponse> {
+    const hostname = bareHostname(url.hostname);
+    const addresses = await dns.lookup(hostname, { all: true, verbatim: true });
+    if (addresses.length === 0) throw new Error('Target hostname did not resolve.');
 
-      const req = client.get(
-        targetUrlStr,
-        {
-          headers: {
-            'User-Agent': 'ProofVAPT-Verifier/1.0',
-            Accept: '*/*'
-          },
-          timeout: 6000
-        },
-        (res) => {
-          let body = '';
-          res.on('data', (d) => { body += d.toString(); });
-          res.on('end', () => {
-            resolve({
-              statusCode: res.statusCode || 0,
-              headers: res.headers,
-              body
-            });
-          });
-        }
+    for (const address of addresses) {
+      const restricted = ScopeEnforcingEgressProxy.isRestrictedIP(
+        address.address,
+        target.mode === 'lab' && target.is_isolated_lab_network_confirmed
       );
+      if (restricted.restricted) {
+        throw new Error(`Retest blocked by destination IP policy: ${restricted.reason || 'restricted IP'}.`);
+      }
+    }
+    const pinnedAddress = addresses[0];
 
-      req.on('error', reject);
-      req.on('timeout', () => {
-        req.destroy();
-        reject(new Error('Verification probe timed out'));
+    return new Promise((resolve, reject) => {
+      const client = url.protocol === 'https:' ? https : http;
+      const options: any = {
+        protocol: url.protocol,
+        hostname,
+        port: url.port ? Number(url.port) : (url.protocol === 'https:' ? 443 : 80),
+        path: `${url.pathname}${url.search}`,
+        method: 'GET',
+        headers,
+        timeout: Math.min(Math.max(target.timeout_ms || 6000, 1000), 15000),
+        lookup: (_hostname: string, _options: unknown, callback: (error: NodeJS.ErrnoException | null, address: string, family: number) => void) => {
+          callback(null, pinnedAddress.address, pinnedAddress.family);
+        }
+      };
+      if (url.protocol === 'https:' && net.isIP(hostname) === 0) options.servername = hostname;
+
+      const request = client.request(options, (response) => {
+        let body = '';
+        let bytesRead = 0;
+        const maxBodyBytes = 64 * 1024;
+        response.on('data', (chunk: Buffer | string) => {
+          if (bytesRead >= maxBodyBytes) return;
+          const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          const remaining = maxBodyBytes - bytesRead;
+          body += part.subarray(0, remaining).toString('utf8');
+          bytesRead += Math.min(part.length, remaining);
+          if (bytesRead >= maxBodyBytes) response.destroy();
+        });
+        response.on('end', () => resolve({ statusCode: response.statusCode || 0, headers: response.headers, body }));
+        response.on('close', () => {
+          if (bytesRead >= maxBodyBytes) resolve({ statusCode: response.statusCode || 0, headers: response.headers, body });
+        });
+        response.on('error', reject);
       });
+
+      request.on('error', reject);
+      request.setTimeout(options.timeout, () => request.destroy(new Error('Retest request timed out.')));
+      request.end();
     });
   }
 }
