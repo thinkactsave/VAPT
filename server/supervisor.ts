@@ -90,12 +90,28 @@ export class ScanSupervisor {
     this.activeJobs.set(scanId, activeJob);
 
     // Launch pipeline asynchronously
-    this.executePipeline(scan.id, scan.target).catch((err) => {
+    this.executePipeline(scan.id, scan.target).catch(async (err) => {
       console.error(`[Supervisor] Pipeline fatal failure for scan ${scanId}:`, err);
+      activeJob.abortController.abort();
+
+      for (const proc of activeJob.activeProcesses) {
+        try {
+          if (proc.pid) process.kill(-proc.pid, 'SIGTERM');
+          else proc.kill('SIGTERM');
+        } catch {
+          try { proc.kill('SIGKILL'); } catch { /* Process already exited. */ }
+        }
+      }
+      try { await activeJob.egressProxy?.stop(); } catch (cleanupError) {
+        console.error(`[Supervisor] Proxy cleanup failed for scan ${scanId}:`, cleanupError);
+      }
+      this.activeJobs.delete(scanId);
+
       const current = db.getScan(scanId);
       if (current && current.status !== 'aborted') {
         current.status = 'failed';
-        current.stop_condition_triggered = `Fatal error: ${err.message}`;
+        current.completed_at = new Date().toISOString();
+        current.stop_condition_triggered = `Fatal error: ${err instanceof Error ? err.message : 'unknown worker error'}`;
         db.saveScan(current);
       }
     });
@@ -218,9 +234,11 @@ export class ScanSupervisor {
       const scan = db.getScan(scanId);
       if (scan) {
         scan.status = 'failed';
+        scan.completed_at = new Date().toISOString();
         scan.stop_condition_triggered = `Scope check failed: ${destCheck.reason}`;
         db.saveScan(scan);
       }
+      this.activeJobs.delete(scanId);
       return;
     }
     this.appendLog(scanId, `Scope confirmed: Host '${url.hostname}' resolved to verified IP ${destCheck.ip}`);
