@@ -27,6 +27,7 @@ if (!fs.existsSync(ARTIFACTS_DIR)) {
 }
 
 interface DatabaseSchema {
+  schema_version: number;
   targets: TargetProfile[];
   scans: ScanExecution[];
   tools: ToolExecutionRecord[];
@@ -220,26 +221,49 @@ class Database {
       try {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         const parsed = JSON.parse(raw);
-        // Ensure all tables exist
-        return {
+        // Schema v2 removes historical severity-derived pseudo-CVSS values.
+        // Previous releases wrote estimated numbers into the "official CVSS"
+        // field without a reproducible CVSS calculator or trusted source. Clear
+        // those values once on upgrade, then preserve provenance-qualified
+        // values saved by future versions.
+        const schemaVersion = Number.isInteger(parsed.schema_version) ? parsed.schema_version : 1;
+        const findings: UnifiedFinding[] = (parsed.findings || []).map((finding: UnifiedFinding) =>
+          schemaVersion < 2
+            ? {
+                ...finding,
+                official_cvss_score: null,
+                official_cvss_version: null,
+                official_cvss_vector: null
+              }
+            : finding
+        );
+
+        const state: DatabaseSchema = {
+          schema_version: 2,
           targets: parsed.targets || [],
           scans: parsed.scans || [],
           tools: parsed.tools || [],
           endpoints: parsed.endpoints || [],
           test_registry: parsed.test_registry && parsed.test_registry.length > 0 ? parsed.test_registry : DEFAULT_OWASP_REGISTRY,
           test_executions: parsed.test_executions || [],
-          findings: parsed.findings || [],
+          findings,
           finding_sources: parsed.finding_sources || [],
           finding_evidences: parsed.finding_evidences || [],
           verification_attempts: parsed.verification_attempts || [],
           proxy_logs: parsed.proxy_logs || [],
         };
+        if (schemaVersion < 2) {
+          console.warn('[DB] Migrating legacy findings: clearing unsupported CVSS values.');
+          this.save(state);
+        }
+        return state;
       } catch (err) {
         console.error('[DB] Failed to parse db.json, initializing fresh store:', err);
       }
     }
 
     const initial: DatabaseSchema = {
+      schema_version: 2,
       targets: [],
       scans: [],
       tools: [],
