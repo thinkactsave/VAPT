@@ -9,6 +9,10 @@ test('always blocks the cloud metadata link-local address, including lab mode', 
   assert.equal(ScopeEnforcingEgressProxy.isRestrictedIP('169.254.10.20', true).restricted, true);
   assert.equal(ScopeEnforcingEgressProxy.isRestrictedIP('::ffff:169.254.169.254', true).restricted, true);
   assert.equal(ScopeEnforcingEgressProxy.isRestrictedIP('::', true).restricted, true);
+  assert.equal(ScopeEnforcingEgressProxy.isRestrictedIP('ff02::1', true).restricted, true);
+  assert.equal(ScopeEnforcingEgressProxy.isRestrictedIP('2001:db8::1', true).restricted, true);
+  assert.equal(ScopeEnforcingEgressProxy.isRestrictedIP('100.64.0.1', true).restricted, true);
+  assert.equal(ScopeEnforcingEgressProxy.isRestrictedIP('198.51.100.10', true).restricted, true);
 });
 
 test('blocks private and local destinations for live scans', () => {
