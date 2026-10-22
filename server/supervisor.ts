@@ -110,9 +110,17 @@ export class ScanSupervisor {
 
       const current = db.getScan(scanId);
       if (current && current.status !== 'aborted') {
+        const endedAt = new Date().toISOString();
         current.status = 'failed';
-        current.completed_at = new Date().toISOString();
+        current.completed_at = endedAt;
         current.stop_condition_triggered = `Fatal error: ${err instanceof Error ? err.message : 'unknown worker error'}`;
+        current.stage_progress[current.current_stage] = {
+          ...current.stage_progress[current.current_stage],
+          status: 'failed',
+          progress_pct: 100,
+          end_time: endedAt,
+          summary: 'Assessment stopped because a required worker failed.'
+        };
         db.saveScan(current);
       }
     });
@@ -374,16 +382,16 @@ export class ScanSupervisor {
     const startedAt = new Date().toISOString();
     this.appendLog(scanId, `Running: ffuf ${args.join(' ')}`);
 
-    return new Promise((resolve) => {
+    return new Promise<void>((resolve, reject) => {
       let proc: ChildProcess;
       try {
         proc = spawn(ffufBin, args, {
           detached: true,
           env: { ...process.env, PATH: `${process.env.PATH}:/app/applet/bin` }
         });
-      } catch (err: any) {
-        this.appendLog(scanId, `ffuf spawn warning: ${err.message}. Generating test execution record.`);
-        resolve();
+      } catch (err) {
+        this.appendLog(scanId, `ffuf could not start: ${err instanceof Error ? err.message : 'unknown spawn error'}`);
+        reject(err);
         return;
       }
 
@@ -404,9 +412,9 @@ export class ScanSupervisor {
           id: `tool-${Date.now()}-ffuf`,
           scan_id: scanId,
           tool_name: 'ffuf',
-          tool_version: '2.1.0',
+          tool_version: 'Not captured; see /api/tools/status',
           command_line: `ffuf ${args.join(' ')}`,
-          exit_code: code || 0,
+          exit_code: code ?? 1,
           raw_output_path: outputPath,
           stdout_summary: stdout.slice(0, 500),
           stderr_summary: stderr.slice(0, 500),
@@ -507,12 +515,16 @@ export class ScanSupervisor {
             this.appendLog(scanId, `Failed to parse ffuf JSON output: ${err.message}`);
           }
         }
-        resolve();
+        if (code !== 0) {
+          reject(new Error(`ffuf exited with code ${String(code)}. See the recorded stderr summary and scan log.`));
+        } else {
+          resolve();
+        }
       });
 
       proc.on('error', (err) => {
         this.appendLog(scanId, `ffuf execution error: ${err.message}`);
-        resolve();
+        reject(err);
       });
     });
   }
@@ -607,7 +619,7 @@ export class ScanSupervisor {
     const startedAt = new Date().toISOString();
     this.appendLog(scanId, `Running ZAP AF: zap.sh -cmd -autorun ${path.basename(zapPlanPath)} (proxying through 127.0.0.1:${proxyPort})`);
 
-    return new Promise((resolve) => {
+    return new Promise<void>((resolve, reject) => {
       let proc: ChildProcess;
       try {
         proc = spawn(zapBin, args, {
@@ -617,9 +629,9 @@ export class ScanSupervisor {
             PATH: `${process.env.PATH}:/usr/local/bin:/opt/zap`
           }
         });
-      } catch (err: any) {
-        this.appendLog(scanId, `ZAP spawn error: ${err.message}. Recording execution metadata.`);
-        resolve();
+      } catch (err) {
+        this.appendLog(scanId, `ZAP could not start: ${err instanceof Error ? err.message : 'unknown spawn error'}`);
+        reject(err);
         return;
       }
 
@@ -627,9 +639,14 @@ export class ScanSupervisor {
 
       let stdout = '';
       let stderr = '';
+      let reportParsed = false;
 
-      proc.stdout?.on('data', (d) => { stdout += d.toString(); });
-      proc.stderr?.on('data', (d) => { stderr += d.toString(); });
+      proc.stdout?.on('data', (d) => {
+        if (stdout.length < 100000) stdout += d.toString().slice(0, 100000 - stdout.length);
+      });
+      proc.stderr?.on('data', (d) => {
+        if (stderr.length < 100000) stderr += d.toString().slice(0, 100000 - stderr.length);
+      });
 
       // Timeout safety: 90 seconds max for ZAP scan job
       const zapTimeout = setTimeout(() => {
@@ -638,7 +655,7 @@ export class ScanSupervisor {
         } catch {
           proc.kill();
         }
-      }, 90000);
+      }, scanProfile === 'standard_active' ? 180000 : 120000);
 
       proc.on('close', (code) => {
         clearTimeout(zapTimeout);
@@ -648,10 +665,10 @@ export class ScanSupervisor {
         db.saveToolRun({
           id: `tool-${Date.now()}-zap`,
           scan_id: scanId,
-          tool_name: 'owasp_zap_active',
-          tool_version: '2.16.0',
+          tool_name: scanProfile === 'standard_active' ? 'owasp_zap_active' : 'owasp_zap_passive',
+          tool_version: 'Not captured; see /api/tools/status',
           command_line: `zap.sh ${args.join(' ')}`,
-          exit_code: code || 0,
+          exit_code: code ?? 1,
           raw_output_path: zapReportPath,
           stdout_summary: stdout.slice(0, 500),
           stderr_summary: stderr.slice(0, 500),
@@ -663,6 +680,7 @@ export class ScanSupervisor {
         if (fs.existsSync(zapReportPath)) {
           try {
             const zapReport = JSON.parse(fs.readFileSync(zapReportPath, 'utf-8'));
+            reportParsed = true;
             const sites = zapReport.site || [];
             let zapAlertsCount = 0;
 
@@ -771,15 +789,21 @@ export class ScanSupervisor {
             this.appendLog(scanId, `Error parsing ZAP report JSON: ${err.message}`);
           }
         } else {
-          this.appendLog(scanId, 'ZAP scan executed. Passive scan analysis finalized.');
+          this.appendLog(scanId, 'ZAP did not produce a JSON report; findings from this stage are incomplete.');
         }
 
-        resolve();
+        if (code !== 0) {
+          reject(new Error(`OWASP ZAP exited with code ${String(code)}. Review the scan log and tool execution record.`));
+        } else if (!reportParsed) {
+          reject(new Error('OWASP ZAP completed without a parseable JSON report.'));
+        } else {
+          resolve();
+        }
       });
 
       proc.on('error', (err) => {
         this.appendLog(scanId, `ZAP execution process error: ${err.message}`);
-        resolve();
+        reject(err);
       });
     });
   }
