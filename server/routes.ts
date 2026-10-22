@@ -26,24 +26,24 @@ apiRouter.get('/tools/status', async (req, res) => {
   try {
     const ffufBin = fs.existsSync('/app/applet/bin/ffuf') ? '/app/applet/bin/ffuf' : 'ffuf';
     const { stdout } = await execFileAsync(ffufBin, ['-V']);
-    ffufVersion = stdout.trim() || '2.1.0';
+    ffufVersion = stdout.trim() || 'Unknown version';
   } catch {
-    ffufVersion = fs.existsSync('/app/applet/bin/ffuf') ? '2.1.0' : 'Not Installed';
+    ffufVersion = 'Not Installed';
   }
 
   try {
     const zapBin = fs.existsSync('/usr/local/bin/zap.sh') ? '/usr/local/bin/zap.sh' : 'zap.sh';
     const { stdout } = await execFileAsync(zapBin, ['-version']);
-    zapVersion = stdout.trim() || '2.16.0';
+    zapVersion = stdout.trim() || 'Unknown version';
   } catch {
-    zapVersion = fs.existsSync('/usr/local/bin/zap.sh') ? '2.16.0' : 'Not Installed';
+    zapVersion = 'Not Installed';
   }
 
   try {
     const { stderr, stdout } = await execFileAsync('java', ['-version']);
-    javaVersion = (stderr || stdout).split('\n')[0].replace('openjdk version', '').replace(/"/g, '').trim();
+    javaVersion = (stderr || stdout).split('\n')[0].replace('openjdk version', '').replace(/"/g, '').trim() || 'Unknown version';
   } catch {
-    javaVersion = '17.0.20.1';
+    javaVersion = 'Not Installed';
   }
 
   res.json({
@@ -74,8 +74,8 @@ apiRouter.post('/targets', (req, res) => {
       res.status(400).json({ error: 'Protocol must be HTTP or HTTPS.' });
       return;
     }
-    if (url.username || url.password || url.hash) {
-      res.status(400).json({ error: 'Credentials and fragments are not allowed in target URLs.' });
+    if (url.username || url.password || url.hash || url.search) {
+      res.status(400).json({ error: 'Credentials, query strings, and fragments are not allowed in target base URLs.' });
       return;
     }
 
@@ -91,12 +91,15 @@ apiRouter.post('/targets', (req, res) => {
       res.status(400).json({ error: 'Lab mode requires explicit confirmation of an isolated test network.' });
       return;
     }
+    const hostnameLower = url.hostname.toLowerCase();
+    const isLocalHostname = hostnameLower === 'localhost' || hostnameLower.endsWith('.localhost') ||
+      hostnameLower.endsWith('.local') || hostnameLower === 'host.docker.internal';
     const privateIpCheck = ScopeEnforcingEgressProxy.isRestrictedIP(
       url.hostname,
       mode === 'lab' && labConfirmed
     );
-    if (mode === 'live' && privateIpCheck.restricted) {
-      res.status(400).json({ error: 'Private, loopback, link-local, and reserved IP literals are not allowed in live mode.' });
+    if (mode === 'live' && (privateIpCheck.restricted || isLocalHostname)) {
+      res.status(400).json({ error: 'Private, loopback, link-local, and local hostnames require confirmed lab mode.' });
       return;
     }
 
@@ -276,6 +279,11 @@ apiRouter.get('/scans/:id/findings', (req, res) => {
 
 apiRouter.get('/scans/:id/tests', (req, res) => {
   res.json(db.getTestExecutions(req.params.id));
+});
+
+// OWASP test catalogue used to render the coverage view.
+apiRouter.get('/tests/registry', (_req, res) => {
+  res.json(db.getTestRegistry());
 });
 
 // OWASP Top 10:2025 Dynamic Coverage Matrix
