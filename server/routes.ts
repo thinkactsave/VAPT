@@ -11,7 +11,8 @@ import {
 } from '../src/types/proofvapt.js';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import fs from 'fs';
+import fs from 'node:fs';
+import { ScopeEnforcingEgressProxy } from './egressProxy.js';
 
 const execFileAsync = promisify(execFile);
 export const apiRouter = Router();
@@ -62,40 +63,96 @@ apiRouter.get('/targets', (req, res) => {
 
 apiRouter.post('/targets', (req, res) => {
   const body = req.body;
-  if (!body.target_url) {
-    res.status(400).json({ error: 'Target URL is required' });
+  if (!body || typeof body !== 'object' || typeof body.target_url !== 'string' || body.target_url.length > 2048) {
+    res.status(400).json({ error: 'A target URL (up to 2048 characters) is required.' });
     return;
   }
 
   try {
-    const url = new URL(body.target_url);
+    const url = new URL(body.target_url.trim());
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      res.status(400).json({ error: 'Protocol must be HTTP or HTTPS' });
+      res.status(400).json({ error: 'Protocol must be HTTP or HTTPS.' });
+      return;
+    }
+    if (url.username || url.password || url.hash) {
+      res.status(400).json({ error: 'Credentials and fragments are not allowed in target URLs.' });
+      return;
+    }
+
+    const mode = body.mode === undefined ? 'live' : body.mode;
+    if (mode !== 'live' && mode !== 'lab') {
+      res.status(400).json({ error: 'Mode must be either live or lab.' });
+      return;
+    }
+
+    const labConfirmed = body.is_isolated_lab_network_confirmed === true;
+    const activeConfirmed = body.active_scan_scope_confirmed === true;
+    if (mode === 'lab' && !labConfirmed) {
+      res.status(400).json({ error: 'Lab mode requires explicit confirmation of an isolated test network.' });
+      return;
+    }
+    const privateIpCheck = ScopeEnforcingEgressProxy.isRestrictedIP(url.hostname, labConfirmed);
+    if (mode === 'live' && privateIpCheck.restricted) {
+      res.status(400).json({ error: 'Private, loopback, link-local, and reserved IP literals are not allowed in live mode.' });
+      return;
+    }
+
+    const targetPort = url.port ? Number(url.port) : (url.protocol === 'https:' ? 443 : 80);
+    const rawPorts = body.allowed_ports === undefined ? [targetPort] : body.allowed_ports;
+    if (!Array.isArray(rawPorts) || rawPorts.length < 1 || rawPorts.length > 32 ||
+        rawPorts.some((port: unknown) => !Number.isInteger(port) || Number(port) < 1 || Number(port) > 65535)) {
+      res.status(400).json({ error: 'Allowed ports must be a non-empty list of integers between 1 and 65535.' });
+      return;
+    }
+    const ports = [...new Set(rawPorts as number[])];
+    if (!ports.includes(targetPort)) {
+      res.status(400).json({ error: `The target URL port ${targetPort} must be included in the allowed ports list.` });
+      return;
+    }
+
+    const rate = body.rate_limit_rps === undefined ? 10 : Number(body.rate_limit_rps);
+    const budget = body.max_request_budget === undefined ? 2000 : Number(body.max_request_budget);
+    const timeout = body.timeout_ms === undefined ? 10000 : Number(body.timeout_ms);
+    if (!Number.isInteger(rate) || rate < 1 || rate > 30) {
+      res.status(400).json({ error: 'Rate limit must be an integer between 1 and 30 requests per second.' });
+      return;
+    }
+    if (!Number.isInteger(budget) || budget < 10 || budget > 10000) {
+      res.status(400).json({ error: 'Request budget must be an integer between 10 and 10000.' });
+      return;
+    }
+    if (!Number.isInteger(timeout) || timeout < 1000 || timeout > 30000) {
+      res.status(400).json({ error: 'Timeout must be between 1000 and 30000 milliseconds.' });
+      return;
+    }
+
+    const exclusions = body.excluded_paths === undefined ? ['/logout'] : body.excluded_paths;
+    if (!Array.isArray(exclusions) || exclusions.length > 100 ||
+        exclusions.some((item: unknown) => typeof item !== 'string' || !item.startsWith('/') || item.startsWith('//') || item.length > 512)) {
+      res.status(400).json({ error: 'Excluded paths must be absolute URL paths beginning with a single slash.' });
       return;
     }
 
     const target: TargetProfile = {
       id: `target-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      name: body.name || url.hostname,
-      mode: body.mode || 'live',
-      target_url: body.target_url,
+      name: typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 100) : url.hostname,
+      mode,
+      target_url: url.toString(),
       hostname: url.hostname,
-      allowed_ports: Array.isArray(body.allowed_ports) && body.allowed_ports.length > 0
-        ? body.allowed_ports
-        : [url.port ? parseInt(url.port, 10) : (url.protocol === 'https:' ? 443 : 80)],
-      excluded_paths: Array.isArray(body.excluded_paths) ? body.excluded_paths : ['/logout'],
-      rate_limit_rps: Number(body.rate_limit_rps) || 10,
-      max_request_budget: Number(body.max_request_budget) || 2000,
-      timeout_ms: Number(body.timeout_ms) || 10000,
-      is_isolated_lab_network_confirmed: !!body.is_isolated_lab_network_confirmed,
-      active_scan_scope_confirmed: !!body.active_scan_scope_confirmed,
+      allowed_ports: ports,
+      excluded_paths: [...new Set(exclusions as string[])],
+      rate_limit_rps: rate,
+      max_request_budget: budget,
+      timeout_ms: timeout,
+      is_isolated_lab_network_confirmed: labConfirmed,
+      active_scan_scope_confirmed: activeConfirmed,
       created_at: new Date().toISOString()
     };
 
     db.saveTarget(target);
     res.status(201).json(target);
-  } catch (err: any) {
-    res.status(400).json({ error: `Invalid Target URL: ${err.message}` });
+  } catch {
+    res.status(400).json({ error: 'Invalid target URL. Enter a complete HTTP or HTTPS URL.' });
   }
 });
 
@@ -119,8 +176,22 @@ apiRouter.get('/scans/:id', (req, res) => {
 });
 
 apiRouter.post('/scans', async (req, res) => {
-  const { target_id, scan_profile } = req.body;
+  const { target_id, scan_profile = 'passive_only' } = req.body || {};
   const target = db.getTarget(target_id);
+
+  if (!['passive_only', 'standard_active', 'authenticated_lab'].includes(scan_profile)) {
+    res.status(400).json({ error: 'Unsupported scan profile.' });
+    return;
+  }
+  if ((scan_profile === 'standard_active' || scan_profile === 'authenticated_lab') &&
+      !target?.active_scan_scope_confirmed) {
+    res.status(403).json({ error: 'Active scans require explicit authorization for this target.' });
+    return;
+  }
+  if (scan_profile === 'authenticated_lab' && target?.mode !== 'lab') {
+    res.status(400).json({ error: 'Authenticated lab scans can only run against a lab target.' });
+    return;
+  }
 
   if (!target) {
     res.status(404).json({ error: 'Target not found' });
@@ -211,27 +282,28 @@ apiRouter.get('/scans/:id/coverage', (req, res) => {
   ];
 
   const coverage: OWASPCoverageSummary[] = categories.map((cat) => {
+    const categoryTests = db.getTestRegistry().filter((test) => test.owasp_category === cat.code);
     const executedForCat = testExecutions.filter(
-      (te) => te.test?.owasp_category === cat.code && te.execution_status === 'completed'
+      (te) => te.test?.owasp_category === cat.code &&
+        (te.execution_status === 'completed' || te.execution_status === 'skipped')
     );
     const findingsForCat = findings.filter((f) => f.owasp_category_code === cat.code);
 
     let status: OWASPCoverageSummary['status'] = 'not_tested';
-    if (cat.code === 'A06' || cat.code === 'A09') {
+    if (cat.code === 'A06' || cat.code === 'A09' || categoryTests.length === 0 ||
+        categoryTests.every((test) => test.execution_method === 'manual_review')) {
       status = 'manual_review_required';
-    } else if (executedForCat.length >= 2) {
+    } else if (executedForCat.length >= categoryTests.length) {
       status = 'tested';
-    } else if (executedForCat.length === 1) {
+    } else if (executedForCat.length > 0) {
       status = 'partially_tested';
-    } else {
-      status = 'not_tested';
     }
 
     return {
       category_code: cat.code,
       category_title: cat.title,
-      tests_total: cat.code === 'A02' ? 4 : 2,
-      tests_executed: executedForCat.length,
+      tests_total: categoryTests.length,
+      tests_executed: executedForCat.filter((test) => test.execution_status === 'completed').length,
       vulnerabilities_found: findingsForCat.length,
       status
     };
@@ -249,19 +321,19 @@ apiRouter.get('/scans/:id/metrics', (req, res) => {
   }
 
   const findings = db.getFindings(scan.id);
-  const toolRuns = db.getToolRuns(scan.id);
   const durationSeconds = scan.started_at && scan.completed_at
-    ? Math.max(1, Math.round((new Date(scan.completed_at).getTime() - new Date(scan.started_at).getTime()) / 1000))
-    : 45;
+    ? Math.max(0, Math.round((new Date(scan.completed_at).getTime() - new Date(scan.started_at).getTime()) / 1000))
+    : 0;
 
-  const rawAlertsCount = findings.reduce((acc, f) => acc + (f.sources?.length || 1), 0);
+  // This is a count of persisted source alerts, not an estimate of alerts that were never stored.
+  const rawAlertsCount = findings.reduce((acc, finding) => acc + (finding.sources?.length || 0), 0);
 
   const metrics = BenchmarkEvaluationEngine.evaluateScanAgainstGroundTruth(
     findings,
     JUICE_SHOP_GROUND_TRUTH,
     rawAlertsCount,
     durationSeconds,
-    scan.observed_request_count || 120
+    scan.observed_request_count
   );
 
   res.json({ metrics, groundTruth: JUICE_SHOP_GROUND_TRUTH });
@@ -269,11 +341,15 @@ apiRouter.get('/scans/:id/metrics', (req, res) => {
 
 // Single-Finding Reproducible Retest API
 apiRouter.post('/findings/:id/retest', async (req, res) => {
-  const { simulated_fix_applied } = req.body;
+  const simulatedFixApplied = req.body?.simulated_fix_applied === true;
+  if (simulatedFixApplied && process.env.NODE_ENV === 'production') {
+    res.status(403).json({ error: 'Simulated remediation is disabled in production. Run a real retest instead.' });
+    return;
+  }
   try {
     const result = await RemediationVerificationEngine.executeRetest(
       req.params.id,
-      !!simulated_fix_applied
+      simulatedFixApplied
     );
     res.json(result);
   } catch (err: any) {
