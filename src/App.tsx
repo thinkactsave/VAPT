@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { ShieldAlert as ShieldAlertIcon } from 'lucide-react';
 import { TopBar } from './components/TopBar.js';
 import { Sidebar } from './components/Sidebar.js';
 import { DashboardOverview } from './components/DashboardOverview.js';
@@ -27,7 +28,72 @@ import {
 } from './types/proofvapt.js';
 import { JUICE_SHOP_GROUND_TRUTH } from '../server/benchmarks.js';
 
+const API_TOKEN_STORAGE_KEY = 'proofvapt_api_token';
+
 export default function App() {
+  const [apiToken, setApiToken] = useState<string>(() => {
+    try { return sessionStorage.getItem(API_TOKEN_STORAGE_KEY) || ''; } catch { return ''; }
+  });
+  const [tokenInput, setTokenInput] = useState('');
+  const [authState, setAuthState] = useState<'checking' | 'required' | 'ready'>('checking');
+  const [authMessage, setAuthMessage] = useState('');
+  const apiFetch = useCallback(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers);
+    if (apiToken) headers.set('Authorization', `Bearer ${apiToken}`);
+    return fetch(input, { ...init, headers });
+  }, [apiToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAuthState('checking');
+    const headers = new Headers();
+    if (apiToken) headers.set('Authorization', `Bearer ${apiToken}`);
+    fetch('/api/session', { headers })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.ok) {
+          setAuthMessage('');
+          setAuthState('ready');
+          return;
+        }
+        if (apiToken) {
+          try { sessionStorage.removeItem(API_TOKEN_STORAGE_KEY); } catch {}
+          setApiToken('');
+          setAuthMessage('The supplied token was not accepted. Check the deployment secret and try again.');
+        } else {
+          setAuthMessage('Enter the API token provided by the person who deployed this instance.');
+        }
+        setAuthState('required');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAuthMessage('Could not reach the server. Check the deployment URL and try again.');
+        setAuthState('required');
+      });
+    return () => { cancelled = true; };
+  }, [apiToken]);
+
+  const submitApiToken = (event: React.FormEvent) => {
+    event.preventDefault();
+    const value = tokenInput.trim();
+    if (!value) {
+      setAuthMessage('Enter the API token to continue.');
+      return;
+    }
+    try { sessionStorage.setItem(API_TOKEN_STORAGE_KEY, value); } catch {}
+    setApiToken(value);
+    setAuthState('checking');
+    setAuthMessage('Checking token…');
+  };
+
+  const signOut = () => {
+    try { sessionStorage.removeItem(API_TOKEN_STORAGE_KEY); } catch {}
+    setApiToken('');
+    setAuthState('required');
+    setTokenInput('');
+    setAuthMessage('You have disconnected this browser session.');
+  };
+
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [isTargetModalOpen, setIsTargetModalOpen] = useState<boolean>(false);
   const [scans, setScans] = useState<ScanExecution[]>([]);
@@ -44,7 +110,7 @@ export default function App() {
   // Fetch Tool Versions
   const fetchToolStatus = async () => {
     try {
-      const res = await fetch('/api/tools/status');
+      const res = await apiFetch('/api/tools/status');
       if (res.ok) {
         const data = await res.json();
         setToolStatus(data.tools);
@@ -57,30 +123,30 @@ export default function App() {
   // Fetch Scans List
   const fetchScans = useCallback(async () => {
     try {
-      const res = await fetch('/api/scans');
+      const res = await apiFetch('/api/scans');
       if (res.ok) {
         const data = await res.json();
         setScans(data);
-        if (data.length > 0 && !currentScan) {
-          setCurrentScan(data[0]);
-        }
+        setCurrentScan((selected) => selected || (data.length > 0 ? data[0] : null));
+      } else {
+        throw new Error('Could not load assessments.');
       }
-    } catch {
-      // Ignore
+    } catch (error) {
+      console.error('Failed to load assessments:', error);
     }
-  }, [currentScan]);
+  }, [apiFetch]);
 
   // Fetch Details for Current Scan
   const fetchScanDetails = useCallback(async (scanId: string) => {
     try {
       const [scanRes, epRes, fndRes, teRes, covRes, logsRes, metRes] = await Promise.all([
-        fetch(`/api/scans/${scanId}`),
-        fetch(`/api/scans/${scanId}/endpoints`),
-        fetch(`/api/scans/${scanId}/findings`),
-        fetch(`/api/scans/${scanId}/tests`),
-        fetch(`/api/scans/${scanId}/coverage`),
-        fetch(`/api/scans/${scanId}/logs`),
-        fetch(`/api/scans/${scanId}/metrics`)
+        apiFetch(`/api/scans/${scanId}`),
+        apiFetch(`/api/scans/${scanId}/endpoints`),
+        apiFetch(`/api/scans/${scanId}/findings`),
+        apiFetch(`/api/scans/${scanId}/tests`),
+        apiFetch(`/api/scans/${scanId}/coverage`),
+        apiFetch(`/api/scans/${scanId}/logs`),
+        apiFetch(`/api/scans/${scanId}/metrics`)
       ]);
 
       if (scanRes.ok) {
@@ -105,28 +171,18 @@ export default function App() {
     } catch (err) {
       console.error('Failed to fetch scan details:', err);
     }
-  }, []);
+  }, [apiFetch]);
 
-  // Initial Load & Auto-Seed
+  // Load existing data only after this browser has passed the API access check.
   useEffect(() => {
+    if (authState !== 'ready') return;
     fetchToolStatus();
     fetchScans();
-
-    // Check if targets exist; if not, seed Juice Shop lab target automatically
-    fetch('/api/targets')
-      .then((res) => res.json())
-      .then((targets) => {
-        if (!targets || targets.length === 0) {
-          fetch('/api/lab/seed', { method: 'POST' })
-            .then(() => fetchScans());
-        }
-      })
-      .catch(() => {});
-  }, [fetchScans]);
+  }, [authState, fetchScans, apiFetch]);
 
   // Polling while scan is running
   useEffect(() => {
-    if (!currentScan) return;
+    if (authState !== 'ready' || !currentScan) return;
 
     fetchScanDetails(currentScan.id);
 
@@ -137,13 +193,13 @@ export default function App() {
       }, 1500);
       return () => clearInterval(interval);
     }
-  }, [currentScan?.id, currentScan?.status, fetchScanDetails, fetchScans]);
+  }, [authState, currentScan?.id, currentScan?.status, fetchScanDetails, fetchScans]);
 
   // Actions
   const handleStartScan = async () => {
     if (!currentScan?.target_id) return;
     try {
-      const res = await fetch('/api/scans', {
+      const res = await apiFetch('/api/scans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -165,7 +221,7 @@ export default function App() {
   const handleCancelScan = async () => {
     if (!currentScan) return;
     try {
-      const res = await fetch(`/api/scans/${currentScan.id}/cancel`, {
+      const res = await apiFetch(`/api/scans/${currentScan.id}/cancel`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -183,7 +239,7 @@ export default function App() {
     scanProfile: ScanProfile
   ) => {
     // 1. Create Target
-    const targetRes = await fetch('/api/targets', {
+    const targetRes = await apiFetch('/api/targets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(targetData)
@@ -219,7 +275,7 @@ export default function App() {
 
   const handleRetestFinding = async (findingId: string, simulatedFix = false) => {
     try {
-      const res = await fetch(`/api/findings/${findingId}/retest`, {
+      const res = await apiFetch(`/api/findings/${findingId}/retest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ simulated_fix_applied: simulatedFix })
@@ -234,7 +290,7 @@ export default function App() {
 
   const handleSeedLab = async () => {
     try {
-      const res = await fetch('/api/lab/seed', { method: 'POST' });
+      const res = await apiFetch('/api/lab/seed', { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         if (data.target) {
@@ -260,8 +316,43 @@ export default function App() {
     }
   };
 
+  if (authState !== 'ready') {
+    return (
+      <main className="access-screen">
+        <section className="access-panel" aria-labelledby="access-title">
+          <div className="access-brand">
+            <span className="access-mark"><ShieldAlertIcon /></span>
+            <span>ProofVAPT</span>
+          </div>
+          <p className="eyebrow">Security assessment workspace</p>
+          <h1 id="access-title">{authState === 'checking' ? 'Checking access' : 'Connect to your workspace'}</h1>
+          <p className="access-copy">This instance can run security scans and store assessment evidence. Access is restricted to the operator holding the deployment token.</p>
+          {authState === 'checking' ? (
+            <div className="access-status" role="status">Validating session…</div>
+          ) : (
+            <form className="access-form" onSubmit={submitApiToken}>
+              <label htmlFor="api-token">Deployment API token</label>
+              <input
+                id="api-token"
+                type="password"
+                autoComplete="current-password"
+                value={tokenInput}
+                onChange={(event) => setTokenInput(event.target.value)}
+                placeholder="Paste the token supplied by your administrator"
+                required
+              />
+              {authMessage && <p className="access-message" role="status">{authMessage}</p>}
+              <button type="submit">Connect securely</button>
+            </form>
+          )}
+          <p className="access-footnote">Use a private deployment behind HTTPS. Do not share this token or commit it to source control.</p>
+        </section>
+      </main>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col font-sans proofvapt-shell">
       {/* Strict Top Bar Contract */}
       <TopBar
         activeTab={activeTab}
@@ -283,7 +374,7 @@ export default function App() {
         </div>
 
         {/* Main Content Area */}
-        <main className="flex-1 p-6 overflow-y-auto max-w-7xl mx-auto w-full">
+        <main className="flex-1 min-w-0 p-6 overflow-y-auto max-w-7xl mx-auto w-full">
           {activeTab === 'overview' && (
             <DashboardOverview
               scans={scans}
@@ -349,6 +440,12 @@ export default function App() {
             />
           )}
         </main>
+      </div>
+
+      <div className="no-print flex justify-end px-4 py-2 border-t border-[#1F2937] bg-[#0B0F17]">
+        <button onClick={signOut} className="text-xs text-slate-400 hover:text-white transition-colors" type="button">
+          Disconnect browser session
+        </button>
       </div>
 
       {/* Target Scope Configuration Modal */}
