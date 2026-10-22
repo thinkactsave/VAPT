@@ -299,19 +299,18 @@ apiRouter.get('/scans/:id/coverage', (req, res) => {
 
   const coverage: OWASPCoverageSummary[] = categories.map((cat) => {
     const categoryTests = db.getTestRegistry().filter((test) => test.owasp_category === cat.code);
-    const executedForCat = testExecutions.filter(
-      (te) => te.test?.owasp_category === cat.code &&
-        (te.execution_status === 'completed' || te.execution_status === 'skipped')
-    );
+    const completedTestIds = new Set(testExecutions
+      .filter((te) => te.test?.owasp_category === cat.code && te.execution_status === 'completed')
+      .map((te) => te.test_id));
     const findingsForCat = findings.filter((f) => f.owasp_category_code === cat.code);
 
     let status: OWASPCoverageSummary['status'] = 'not_tested';
     if (cat.code === 'A06' || cat.code === 'A09' || categoryTests.length === 0 ||
         categoryTests.every((test) => test.execution_method === 'manual_review')) {
       status = 'manual_review_required';
-    } else if (executedForCat.length >= categoryTests.length) {
+    } else if (completedTestIds.size >= categoryTests.length) {
       status = 'tested';
-    } else if (executedForCat.length > 0) {
+    } else if (completedTestIds.size > 0) {
       status = 'partially_tested';
     }
 
@@ -319,7 +318,7 @@ apiRouter.get('/scans/:id/coverage', (req, res) => {
       category_code: cat.code,
       category_title: cat.title,
       tests_total: categoryTests.length,
-      tests_executed: executedForCat.filter((test) => test.execution_status === 'completed').length,
+      tests_executed: completedTestIds.size,
       vulnerabilities_found: findingsForCat.length,
       status
     };
@@ -336,12 +335,35 @@ apiRouter.get('/scans/:id/metrics', (req, res) => {
     return;
   }
 
+  const target = scan.target;
+  const configuredLabUrl = process.env.JUICE_SHOP_URL ||
+    (process.env.NODE_ENV === 'production' ? '' : 'http://127.0.0.1:3001');
+  const isBenchmarkTarget = (() => {
+    if (!target || target.mode !== 'lab' || !configuredLabUrl) return false;
+    try {
+      const configured = new URL(configuredLabUrl);
+      const scanned = new URL(target.target_url);
+      return configured.origin === scanned.origin && configured.hostname === scanned.hostname;
+    } catch {
+      return false;
+    }
+  })();
+
+  // Juice Shop ground truth is target-specific. Applying it to an arbitrary
+  // customer site would produce academically invalid precision/recall numbers.
+  if (!isBenchmarkTarget) {
+    res.json({
+      metrics: null,
+      groundTruth: [],
+      message: 'Benchmark metrics are available only for the configured OWASP Juice Shop lab target.'
+    });
+    return;
+  }
+
   const findings = db.getFindings(scan.id);
   const durationSeconds = scan.started_at && scan.completed_at
     ? Math.max(0, Math.round((new Date(scan.completed_at).getTime() - new Date(scan.started_at).getTime()) / 1000))
     : 0;
-
-  // This is a count of persisted source alerts, not an estimate of alerts that were never stored.
   const rawAlertsCount = findings.reduce((acc, finding) => acc + (finding.sources?.length || 0), 0);
 
   const metrics = BenchmarkEvaluationEngine.evaluateScanAgainstGroundTruth(
